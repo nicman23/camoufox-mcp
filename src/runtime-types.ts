@@ -14,6 +14,10 @@ export type ProxyConfig = string | { server: string; username?: string; password
 export interface RequestGuard {
   assertAllowed(): void;
   watchPage(page: Page): void;
+  // Reset the per-navigation request budget. Long-lived sessions reuse one
+  // context across navigations; without a reset the lifetime budget is
+  // exhausted after a handful of heavy pages and every request is blocked.
+  resetBudget(): void;
 }
 
 export interface SessionRecord {
@@ -25,6 +29,10 @@ export interface SessionRecord {
   diagnostics: DiagnosticsCollector;
   selectedOS: SupportedOs;
   waitStrategy: WaitStrategy;
+  // CAPTCHA policy persisted at session start so the documented "pause" default
+  // drives detection on every subsequent navigate/action/snapshot/resume without
+  // the caller re-passing captchaPolicy on each call.
+  captchaPolicy: CaptchaPolicy;
   releaseSlot: SlotRelease;
   rawUrls: string[];
   secrets: string[];

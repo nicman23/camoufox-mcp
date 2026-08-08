@@ -12,6 +12,7 @@ const blockedAddresses = [
   "169.254.169.254",
   "172.16.0.1",
   "192.0.0.1",
+  "192.0.2.5",
   "192.168.0.1",
   "192.88.99.1",
   "224.0.0.1",
@@ -42,6 +43,10 @@ const allowedAddresses = [
   "93.184.216.34",
   "2606:4700:4700::1111",
   "2001:4860:4860::8888",
+  // 192.0.0.0/16 was previously over-blocked; only /24s are reserved now.
+  // 192.0.32.0/20 is ICANN-delegated public space (was wrongly blocked before).
+  "192.0.31.255",
+  "192.0.32.1",
 ];
 
 for (const address of allowedAddresses) {

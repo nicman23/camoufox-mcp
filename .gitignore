@@ -149,3 +149,4 @@ data-files/
 TODO.md
 publish_docker.sh
 repomix-output.xml
+.zcode

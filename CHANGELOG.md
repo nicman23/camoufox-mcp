@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Real MCP output schemas for `browse`, `browse_snapshot`, `browse_sequence`, `browse_screenshot`, `browse_console`, and all six `browse_session_*` tools. Previously these advertised an empty passthrough output schema while the focused extractors (links/forms/outline/find/network_summary) declared real ones; clients can now introspect the structured result shape of every tool.
+
+### Changed
+- Upgraded the pinned browser triple to `camoufox-js` 0.12.0 + Camoufox browser 152.0.4-beta.28 (`playwright-core` stays 1.59.0). Upstream fixed the FF152 screenshot regression in 152.0.4-beta.26 (daijro/camoufox#659) and now marks the 152.0.4-beta.27+ channel as latest stable; the FF135 build is considered too old for modern anti-bot systems. Full local suite passes on the new triple, including all screenshot cases. Wipe the browser cache before updating (see AGENTS.md "Dependency & Browser Pinning").
+- Default `CAMOUFOX_MCP_SEQUENCE_TIMEOUT_MS` raised from 120000 to 250000 so a maximum-length sequence (25 actions at the 10s default per-action timeout) fits the budget; previously any sequence with 13+ default-timeout actions was rejected.
+- `browse_find` now returns every occurrence of the query within a single text node instead of only the first, so repeated matches inside one paragraph are no longer collapsed.
+- `npm run doctor` smoke test resolves as soon as both the `camoufox_status` and `browse` responses arrive instead of always waiting the full 30s timeout; the 30s timer remains the upper bound for a hung/dead browser.
+- Selector screenshots now clamp the element clip to the page viewport before capture, so a partially offscreen element after `scrollIntoView` no longer produces a clip Playwright rejects.
+- CI `release` job now also depends on `publish-clawhub`, so a GitHub Release is only cut after the ClawHub bundle publishes successfully (previously a failed ClawHub publish still released a version ClawHub didn't have).
+- `registerJsonTool` no longer redeclares the SDK's `registerTool` signature through `unknown`; it narrows the callback to the SDK's `ToolCallback` type at the boundary, which is less fragile across SDK upgrades.
+- Narrowed the npm package `files` globs so the published tarball ships only the runtime plugin bundle (9 files) instead of all 71 files under `plugins/`, excluding generated eval/iteration/reports content that the ClawHub staging already omits.
+
+### Security
+- Dependency refresh: `npm audit` clean (was 11 vulnerabilities: 7 high, 3 moderate, 1 low). Lockfile bumps cover all open Dependabot PRs (fast-uri, hono, brace-expansion, ip-address, body-parser); `adm-zip` forced to `^0.6.0` via overrides (GHSA-xcpc-8h2w-3j85, `camoufox-js` 0.12.0 now also requires `^0.6.0` directly); `js-yaml` override bumped 4.2.0 -> 4.3.1 (the old override was itself vulnerable).
+- Selector screenshots enforce the dimension policy against the element's real size before viewport clamping, so an oversize element can no longer slip under the policy via the clamp.
+
 ## [2.4.0] - 2026-07-06
 
 ### Fixed

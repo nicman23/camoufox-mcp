@@ -10,7 +10,7 @@ import { buildBrowsePayload, buildSnapshotPayload } from "./extractors.js";
 import { buildSuccessContent, buildToolError, buildToolFailure } from "./responses.js";
 import { captureScreenshot, isScreenshotDimensionAllowed } from "./screenshots.js";
 import { runSequenceActionsWithBudget, sequenceTimeoutBudget } from "./sequence.js";
-import { applyStealthProfile, defaultHeadlessMode, getProxySecrets, getProxyServer, redactUrl } from "./utils.js";
+import { defaultHeadlessMode, getProxySecrets, getProxyServer, redactUrl } from "./utils.js";
 import { appendDiagnostics } from "./diagnostics.js";
 
 export function buildFeatureSummary(
@@ -87,15 +87,16 @@ export async function handleStatus() {
 }
 
 export async function handleBrowse(input: BrowseToolInput) {
-  const effectiveInput = applyStealthProfile(input);
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation; reading the
+  // raw input here keeps redactUrl/screenshot checks on caller-supplied values.
+  const safeUrl = redactUrl(input.url);
 
-  if (effectiveInput.screenshot && !isScreenshotDimensionAllowed(effectiveInput.viewport, effectiveInput.window)) {
+  if (input.screenshot && !isScreenshotDimensionAllowed(input.viewport, input.window)) {
     return buildToolError(`Screenshot dimensions exceed server policy (${MAX_SCREENSHOT_WIDTH}x${MAX_SCREENSHOT_HEIGHT}).`);
   }
 
   try {
-    return await runBrowserOperation("browse", effectiveInput, async ({
+    return await runBrowserOperation("browse", input, async ({
       page,
       response,
       requestGuard,
@@ -103,12 +104,12 @@ export async function handleBrowse(input: BrowseToolInput) {
       selectedOS,
       waitStrategy,
     }) => {
-      const mode = effectiveInput.outputMode ?? "text";
-      const charLimit = effectiveInput.maxChars ?? DEFAULT_MAX_CHARS;
+      const mode = input.outputMode ?? "text";
+      const charLimit = input.maxChars ?? DEFAULT_MAX_CHARS;
       const payload = await runGuardedPageRead(
         page,
         requestGuard,
-        () => buildBrowsePayload(page, response, mode, charLimit, effectiveInput.selector),
+        () => buildBrowsePayload(page, response, mode, charLimit, input.selector),
       );
       requestGuard.assertAllowed();
       if (isBlockedNavigationResponse(payload)) {
@@ -118,8 +119,8 @@ export async function handleBrowse(input: BrowseToolInput) {
       appendDiagnostics(payload, diagnostics.payload());
 
       let screenshotResult: ScreenshotResult | undefined;
-      if (effectiveInput.screenshot) {
-        screenshotResult = await captureScreenshot(page, safeUrl, effectiveInput.screenshotOptions);
+      if (input.screenshot) {
+        screenshotResult = await captureScreenshot(page, safeUrl, input.screenshotOptions);
         payload.screenshot = screenshotResult.screenshotMetadata;
       }
       requestGuard.assertAllowed();
@@ -130,32 +131,32 @@ export async function handleBrowse(input: BrowseToolInput) {
         mode,
         charLimit,
         payload,
-        effectiveInput.proxy,
-        effectiveInput.block_webrtc,
-        effectiveInput.block_images,
-        effectiveInput.block_webgl,
-        effectiveInput.disable_coop,
-        effectiveInput.geoip,
+        input.proxy,
+        input.block_webrtc,
+        input.block_images,
+        input.block_webgl,
+        input.disable_coop,
+        input.geoip,
       );
       console.error(chalk.green(`[Camoufox] Successfully retrieved content from ${safeUrl} (${features}).`));
 
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
-        return buildSuccessContent(mergedPayload, screenshotResult ?? captchaScreenshot);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
+        return buildSuccessContent(mergedPayload, (screenshotResult && screenshotResult.base64) ? screenshotResult : captchaScreenshot);
       }
       return buildSuccessContent(payload, screenshotResult);
     });
   } catch (error) {
-    return buildToolFailure("browse", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse", safeUrl, error, input);
   }
 }
 
 export async function handleSnapshot(input: SnapshotToolInput) {
-  const effectiveInput = applyStealthProfile(input);
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation.
+  const safeUrl = redactUrl(input.url);
 
   try {
-    return await runBrowserOperation("browse snapshot", effectiveInput, async ({
+    return await runBrowserOperation("browse snapshot", input, async ({
       page,
       response,
       requestGuard,
@@ -167,57 +168,57 @@ export async function handleSnapshot(input: SnapshotToolInput) {
         () => buildSnapshotPayload(
           page,
           response,
-          effectiveInput.maxChars ?? DEFAULT_MAX_CHARS,
-          effectiveInput.maxElements ?? DEFAULT_MAX_ELEMENTS,
-          effectiveInput.selector,
+          input.maxChars ?? DEFAULT_MAX_CHARS,
+          input.maxElements ?? DEFAULT_MAX_ELEMENTS,
+          input.selector,
         ),
       );
       requestGuard.assertAllowed();
       appendDiagnostics(payload, diagnostics.payload());
       console.error(chalk.green(`[Camoufox] Successfully captured snapshot from ${safeUrl}.`));
 
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
         return buildSuccessContent(mergedPayload, captchaScreenshot);
       }
       return buildSuccessContent(payload);
     });
   } catch (error) {
-    return buildToolFailure("browse snapshot", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse snapshot", safeUrl, error, input);
   }
 }
 
 export async function handleSequence(input: SequenceToolInput) {
-  const effectiveInput = applyStealthProfile(input);
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation.
+  const safeUrl = redactUrl(input.url);
 
-  if (effectiveInput.screenshot && !isScreenshotDimensionAllowed(effectiveInput.viewport, effectiveInput.window)) {
+  if (input.screenshot && !isScreenshotDimensionAllowed(input.viewport, input.window)) {
     return buildToolError(`Screenshot dimensions exceed server policy (${MAX_SCREENSHOT_WIDTH}x${MAX_SCREENSHOT_HEIGHT}).`);
   }
 
-  if (sequenceTimeoutBudget(effectiveInput.actions) > SEQUENCE_TIMEOUT_MS) {
+  if (sequenceTimeoutBudget(input.actions) > SEQUENCE_TIMEOUT_MS) {
     return buildToolError(`Sequence timeout budget exceeds server policy (${SEQUENCE_TIMEOUT_MS}ms).`);
   }
 
   try {
-    return await runBrowserOperation("browse sequence", effectiveInput, async ({
+    return await runBrowserOperation("browse sequence", input, async ({
       page,
       response,
       requestGuard,
       diagnostics,
       getLastNavigationResponse,
     }) => {
-      const rawUrls = [effectiveInput.url, getProxyServer(effectiveInput.proxy)].filter((rawUrl): rawUrl is string => Boolean(rawUrl));
-      const secrets = getProxySecrets(effectiveInput.proxy);
-      const actions = await runSequenceActionsWithBudget(page, requestGuard, effectiveInput.actions, rawUrls, secrets);
+      const rawUrls = [input.url, getProxyServer(input.proxy)].filter((rawUrl): rawUrl is string => Boolean(rawUrl));
+      const secrets = getProxySecrets(input.proxy);
+      const actions = await runSequenceActionsWithBudget(page, requestGuard, input.actions, rawUrls, secrets);
 
-      const mode = effectiveInput.outputMode ?? "text";
-      const charLimit = effectiveInput.maxChars ?? DEFAULT_MAX_CHARS;
+      const mode = input.outputMode ?? "text";
+      const charLimit = input.maxChars ?? DEFAULT_MAX_CHARS;
       const finalResponse = getLastNavigationResponse() ?? response;
       const contentPayload = await runGuardedPageRead(
         page,
         requestGuard,
-        () => buildBrowsePayload(page, finalResponse, mode, charLimit, effectiveInput.selector),
+        () => buildBrowsePayload(page, finalResponse, mode, charLimit, input.selector),
       );
       requestGuard.assertAllowed();
       if (isBlockedNavigationResponse(contentPayload)) {
@@ -231,8 +232,8 @@ export async function handleSequence(input: SequenceToolInput) {
           page,
           finalResponse,
           charLimit,
-          effectiveInput.maxElements ?? DEFAULT_MAX_ELEMENTS,
-          effectiveInput.selector,
+          input.maxElements ?? DEFAULT_MAX_ELEMENTS,
+          input.selector,
         ),
       );
       requestGuard.assertAllowed();
@@ -248,7 +249,7 @@ export async function handleSequence(input: SequenceToolInput) {
         outputMode: mode,
         truncated: contentPayload.truncated,
         maxChars: charLimit,
-        selector: effectiveInput.selector,
+        selector: input.selector,
         selectorFound: contentPayload.selectorFound,
         text: contentPayload.text,
         html: contentPayload.html,
@@ -257,22 +258,22 @@ export async function handleSequence(input: SequenceToolInput) {
       appendDiagnostics(payload, diagnostics.payload());
 
       let screenshotResult: ScreenshotResult | undefined;
-      if (effectiveInput.screenshot) {
-        screenshotResult = await captureScreenshot(page, safeUrl, effectiveInput.screenshotOptions);
+      if (input.screenshot) {
+        screenshotResult = await captureScreenshot(page, safeUrl, input.screenshotOptions);
         payload.screenshot = screenshotResult.screenshotMetadata;
       }
       requestGuard.assertAllowed();
 
       console.error(chalk.green(`[Camoufox] Successfully ran ${actions.length} actions from ${safeUrl}.`));
-      if (effectiveInput.captchaPolicy) {
+      if (input.captchaPolicy) {
         const finalResponse = getLastNavigationResponse() ?? response;
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, finalResponse, payload, effectiveInput.captchaPolicy, safeUrl);
-        return buildSuccessContent(mergedPayload, screenshotResult ?? captchaScreenshot);
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, finalResponse, payload, input.captchaPolicy, safeUrl);
+        return buildSuccessContent(mergedPayload, (screenshotResult && screenshotResult.base64) ? screenshotResult : captchaScreenshot);
       }
       return buildSuccessContent(payload, screenshotResult);
     });
   } catch (error) {
-    return buildToolFailure("browse sequence", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse sequence", safeUrl, error, input);
   }
 }
 

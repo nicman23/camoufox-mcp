@@ -182,10 +182,17 @@ export const screenshotToolShape = {
 
 export const consoleToolShape = {
   ...commonBrowserToolShape,
+  // browse_console exists to surface console diagnostics, so default to
+  // collecting them. includeNetwork stays caller-controlled (defaults off) and
+  // is honored rather than silently overridden by the handler.
+  includeConsole: z.boolean().optional().default(true).describe("Include bounded page console diagnostics in the JSON response."),
 };
 
 export const networkSummaryToolShape = {
   ...commonBrowserToolShape,
+  // browse_network_summary exists to surface network diagnostics, so default to
+  // collecting them. includeConsole stays caller-controlled (defaults off).
+  includeNetwork: z.boolean().optional().default(true).describe("Include bounded network diagnostics in the JSON response."),
   maxFailures: z.number().int().min(0).max(50).optional().default(10).describe("Maximum failed requests to include in the summary."),
 };
 

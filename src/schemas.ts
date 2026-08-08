@@ -1,6 +1,6 @@
 export { anyOutputSchema } from "./schema/primitives.js";
 export {
-  findOutputSchema, formsOutputSchema, linksOutputSchema, networkSummaryOutputSchema, outlineOutputSchema, statusOutputSchema,
+  browseOutputSchema, consoleOutputSchema, findOutputSchema, formsOutputSchema, linksOutputSchema, networkSummaryOutputSchema, outlineOutputSchema, screenshotOutputSchema, sequenceOutputSchema, sessionActionOutputSchema, sessionCloseOutputSchema, sessionNavigateOutputSchema, sessionResumeOutputSchema, sessionSnapshotOutputSchema, sessionStartOutputSchema, snapshotOutputSchema, statusOutputSchema,
 } from "./schema/output.js";
 export {
   browseToolShape, consoleToolShape, findToolShape, formsToolShape, linksToolShape, networkSummaryToolShape, outlineToolShape, screenshotToolShape, sequenceToolShape, sessionActionToolShape, sessionCloseToolShape, sessionNavigateToolShape, sessionResumeToolShape, sessionSnapshotToolShape, sessionStartToolShape, snapshotToolShape,

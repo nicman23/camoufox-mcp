@@ -177,14 +177,9 @@ export function applyCaptchaPolicy<T extends object>(
     throw new Error(`Human verification challenge detected: ${detection.challengeSignals.join(", ")}`);
   }
 
-  if (effectivePolicy === "attempt") {
-    return {
-      ...payload,
-      ...detection,
-      requiresUserAction: true,
-    };
-  }
-
+  // "pause" and "attempt" both surface the detection with requiresUserAction.
+  // "attempt" additionally enriches the detection upstream (iframe/interactive
+  // hints + bounded screenshot) via detectChallenge/maybeDetectCaptcha.
   return {
     ...payload,
     ...detection,

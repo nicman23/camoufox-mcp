@@ -3,7 +3,7 @@ import type { Browser, Response } from "playwright-core";
 import chalk from "chalk";
 import { validateTargetUrl } from "./policy.js";
 import { DEFAULT_ACTION_TIMEOUT_MS, DEFAULT_MAX_CHARS, DEFAULT_MAX_ELEMENTS, DEFAULT_WAIT_STRATEGY, MAX_SESSIONS, SESSION_CLOSE_GRACE_MS, SESSION_TTL_MS } from "./config.js";
-import type { SessionRecord, SlotRelease, WaitStrategy } from "./types.js";
+import type { CaptchaPolicy, SessionRecord, SlotRelease, WaitStrategy } from "./types.js";
 import type { SessionActionToolInput, SessionCloseToolInput, SessionNavigateToolInput, SessionResumeToolInput, SessionSnapshotToolInput, SessionStartToolInput } from "./schemas.js";
 import { acquireBrowserSlot, browserContextOptions, buildCamoufoxOptions, closeBrowser, installRequestGuard, launchCamoufoxBrowser, runGuardedPageRead, settleAndAssertSafe, trackBrowser, validateBrowserOptionsInput } from "./browser-runtime.js";
 import { createDiagnosticsCollector } from "./diagnostics.js";
@@ -144,6 +144,10 @@ export async function navigateSession(
   const targetUrl = await validateTargetUrl(url);
   session.rawUrls.push(url);
 
+  // Reset the request budget for this navigation. Sessions reuse one context,
+  // so without a reset the lifetime budget is exhausted after a few heavy pages.
+  session.requestGuard.resetBudget();
+
   try {
     const response = await session.page.goto(targetUrl.toString(), {
       waitUntil: waitStrategy ?? session.waitStrategy,
@@ -164,9 +168,10 @@ export async function navigateSession(
 }
 
 export async function handleSessionStart(input: SessionStartToolInput) {
+  const captchaPolicy = input.captchaPolicy ?? "pause";
   const effectiveInput = applyStealthProfile({
     ...input,
-    captchaPolicy: input.captchaPolicy ?? "pause",
+    captchaPolicy,
   });
 
   if (!reserveSessionSlot()) {
@@ -202,6 +207,7 @@ export async function handleSessionStart(input: SessionStartToolInput) {
       diagnostics: createDiagnosticsCollector(page, effectiveInput, rawUrls, secrets),
       selectedOS,
       waitStrategy,
+      captchaPolicy,
       releaseSlot: release,
       rawUrls,
       secrets,
@@ -227,7 +233,7 @@ export async function handleSessionStart(input: SessionStartToolInput) {
       selectedOS,
       headlessMode,
       stealthProfile: effectiveInput.stealthProfile,
-      captchaPolicy: effectiveInput.captchaPolicy ?? "pause",
+      captchaPolicy,
     });
   } catch (error) {
     if (browser) {
@@ -252,6 +258,17 @@ export function sessionSanitizedError(error: unknown, session?: SessionRecord, e
   return sanitizeErrorMessage(describeError(error), rawUrls, secrets);
 }
 
+// Resolve the CAPTCHA policy for a session operation: a per-call override wins,
+// otherwise fall back to the policy persisted at session start. Without this,
+// starting a session with the documented "pause" default performed no detection
+// on subsequent calls unless the caller re-passed captchaPolicy each time.
+export function effectiveCaptchaPolicy(
+  session: SessionRecord,
+  input: { captchaPolicy?: CaptchaPolicy },
+): CaptchaPolicy {
+  return input.captchaPolicy ?? session.captchaPolicy;
+}
+
 export async function buildSessionSnapshotResult(
   session: SessionRecord,
   input: SessionSnapshotToolInput,
@@ -267,18 +284,20 @@ export async function buildSessionSnapshotResult(
       input.selector,
     ),
   );
-  const basePayload = { sessionId: session.id, expiresAt: sessionExpiresAt(session), ...snapshot };
-  if (input.captchaPolicy) {
-    const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(
-      session.page,
-      session.lastNavigationResponse,
-      basePayload,
-      input.captchaPolicy,
-      redactUrl(session.page.url()),
-    );
-    return buildSuccessContent(mergedPayload, captchaScreenshot);
-  }
-  return buildSuccessContent(basePayload);
+  // Surface the diagnostics collector that was created at session start but
+  // previously never read. Snapshot/resume are the read-state operations, so
+  // bounded console/network diagnostics belong here.
+  const diagnostics = session.diagnostics.payload();
+  const basePayload = { sessionId: session.id, expiresAt: sessionExpiresAt(session), ...snapshot, ...(diagnostics ? { diagnostics } : {}) };
+  const captchaPolicy = effectiveCaptchaPolicy(session, input);
+  const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(
+    session.page,
+    session.lastNavigationResponse,
+    basePayload,
+    captchaPolicy,
+    redactUrl(session.page.url()),
+  );
+  return buildSuccessContent(mergedPayload, captchaScreenshot);
 }
 
 export async function handleSessionNavigate(input: SessionNavigateToolInput) {
@@ -296,11 +315,9 @@ export async function handleSessionNavigate(input: SessionNavigateToolInput) {
         () => buildBrowsePayload(currentSession.page, response, mode, charLimit, input.selector),
       );
       const basePayload = { sessionId: currentSession.id, expiresAt: sessionExpiresAt(currentSession), ...payload };
-      if (input.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(currentSession.page, response, basePayload, input.captchaPolicy, redactUrl(input.url));
-        return buildSuccessContent(mergedPayload, captchaScreenshot);
-      }
-      return buildSuccessContent(basePayload);
+      const captchaPolicy = effectiveCaptchaPolicy(currentSession, input);
+      const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(currentSession.page, response, basePayload, captchaPolicy, redactUrl(input.url));
+      return buildSuccessContent(mergedPayload, captchaScreenshot);
     });
   } catch (error) {
     return buildToolError(`Failed to navigate session. Error: ${sessionSanitizedError(error, session, [input.url])}`);
@@ -327,11 +344,9 @@ export async function handleSessionAction(input: SessionActionToolInput) {
         ),
       );
       const basePayload = { sessionId: currentSession.id, expiresAt: sessionExpiresAt(currentSession), action: actionResult, snapshot };
-      if (input.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(currentSession.page, currentSession.lastNavigationResponse, basePayload, input.captchaPolicy, redactUrl(currentSession.page.url()));
-        return buildSuccessContent(mergedPayload, captchaScreenshot);
-      }
-      return buildSuccessContent(basePayload);
+      const captchaPolicy = effectiveCaptchaPolicy(currentSession, input);
+      const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(currentSession.page, currentSession.lastNavigationResponse, basePayload, captchaPolicy, redactUrl(currentSession.page.url()));
+      return buildSuccessContent(mergedPayload, captchaScreenshot);
     });
   } catch (error) {
     return buildToolError(`Failed to run session action. Error: ${sessionSanitizedError(error, session)}`);

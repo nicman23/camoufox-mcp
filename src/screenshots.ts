@@ -67,19 +67,45 @@ export async function captureScreenshot(page: Page, safeUrl: string, options?: S
         };
       });
 
+      // Clamp the clip to the page viewport. After scrollIntoView a partially
+      // offscreen element can yield a rect that extends past the viewport edge,
+      // and Playwright rejects clips whose x/y/width/height fall outside it.
+      // viewportSize() is null when no fixed viewport is set; in that case keep
+      // the raw rect and let the dimension policy + screenshot call decide.
+      const viewport = page.viewportSize();
+      let clampedClip = clip;
+      if (viewport) {
+        const x = Math.max(0, Math.min(clip.x, viewport.width));
+        const y = Math.max(0, Math.min(clip.y, viewport.height));
+        clampedClip = {
+          x,
+          y,
+          width: Math.max(0, Math.min(clip.width, viewport.width - x)),
+          height: Math.max(0, Math.min(clip.height, viewport.height - y)),
+        };
+      }
+
       if (clip.width <= 0 || clip.height <= 0) {
         screenshotMetadata.error = "Screenshot selector has no visible area.";
         return { screenshotMetadata, mimeType };
       }
 
+      // Enforce the dimension policy on the element's real size, not the
+      // clamped clip; clamping would otherwise shrink an oversize element under
+      // the limit and silently bypass the policy.
       if (!isScreenshotAreaAllowed(clip.width, clip.height)) {
         screenshotMetadata.error = `Screenshot selector exceeds server dimension policy (${MAX_SCREENSHOT_WIDTH}x${MAX_SCREENSHOT_HEIGHT}).`;
         return { screenshotMetadata, mimeType };
       }
 
+      if (clampedClip.width <= 0 || clampedClip.height <= 0) {
+        screenshotMetadata.error = "Screenshot selector has no visible area.";
+        return { screenshotMetadata, mimeType };
+      }
+
       buffer = await page.screenshot({
         ...baseOptions,
-        clip,
+        clip: clampedClip,
       });
     } else {
       if (options?.fullPage) {

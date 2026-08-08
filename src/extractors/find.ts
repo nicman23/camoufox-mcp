@@ -103,23 +103,37 @@ export async function buildFindPayload(
         }
 
         const rawText = (node.nodeValue ?? "").replace(/\s+/g, " ");
-        const index = rawText.toLowerCase().indexOf(normalizedQuery);
-        if (index < 0) {
-          continue;
+        // Iterate every occurrence of the query within this text node. Previously
+        // a single indexOf found only the first match per node, so repeated hits
+        // inside one paragraph were collapsed. Scan from the end of each hit so
+        // overlapping/adjacent matches are still reported (e.g. "aa" in "aaa").
+        const nodeSelector = selectorFor(node.parentElement ?? root);
+        let from = 0;
+        while (from <= rawText.length) {
+          const index = rawText.toLowerCase().indexOf(normalizedQuery, from);
+          if (index < 0) {
+            break;
+          }
+
+          if (matches.length >= maxItems) {
+            truncated = true;
+            break;
+          }
+
+          const start = Math.max(0, index - surroundingChars);
+          const end = Math.min(rawText.length, index + searchQuery.length + surroundingChars);
+          matches.push({
+            text: rawText.slice(start, end).trim(),
+            selector: nodeSelector,
+            score: 1,
+          });
+
+          from = index + searchQuery.length;
         }
 
-        if (matches.length >= maxItems) {
-          truncated = true;
+        if (truncated) {
           break;
         }
-
-        const start = Math.max(0, index - surroundingChars);
-        const end = Math.min(rawText.length, index + searchQuery.length + surroundingChars);
-        matches.push({
-          text: rawText.slice(start, end).trim(),
-          selector: selectorFor(node.parentElement ?? root),
-          score: 1,
-        });
       }
 
       return { matches, truncated, found: true };

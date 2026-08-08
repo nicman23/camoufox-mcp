@@ -5,15 +5,15 @@ import { maybeDetectCaptcha } from "./captcha.js";
 import { buildFindPayload, buildFormsPayload, buildLinksPayload, buildNetworkSummary, buildOutlinePayload } from "./extractors.js";
 import { buildSuccessContent, buildToolError, buildToolFailure } from "./responses.js";
 import { captureScreenshot, isScreenshotDimensionAllowed } from "./screenshots.js";
-import { applyStealthProfile, redactUrl } from "./utils.js";
+import { redactUrl } from "./utils.js";
 import { appendDiagnostics } from "./diagnostics.js";
 
 export async function handleLinks(input: LinksToolInput) {
-  const effectiveInput = applyStealthProfile(input);
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation.
+  const safeUrl = redactUrl(input.url);
 
   try {
-    return await runBrowserOperation("browse links", effectiveInput, async ({
+    return await runBrowserOperation("browse links", input, async ({
       page,
       response,
       requestGuard,
@@ -25,29 +25,29 @@ export async function handleLinks(input: LinksToolInput) {
         () => buildLinksPayload(
           page,
           response,
-          effectiveInput.maxLinks ?? DEFAULT_MAX_ELEMENTS,
-          effectiveInput.selector,
+          input.maxLinks ?? DEFAULT_MAX_ELEMENTS,
+          input.selector,
         ),
       );
       requestGuard.assertAllowed();
       appendDiagnostics(payload, diagnostics.payload());
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
         return buildSuccessContent(mergedPayload, captchaScreenshot);
       }
       return buildSuccessContent(payload);
     });
   } catch (error) {
-    return buildToolFailure("browse links", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse links", safeUrl, error, input);
   }
 }
 
 export async function handleForms(input: FormsToolInput) {
-  const effectiveInput = applyStealthProfile(input);
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation.
+  const safeUrl = redactUrl(input.url);
 
   try {
-    return await runBrowserOperation("browse forms", effectiveInput, async ({
+    return await runBrowserOperation("browse forms", input, async ({
       page,
       response,
       requestGuard,
@@ -59,30 +59,30 @@ export async function handleForms(input: FormsToolInput) {
         () => buildFormsPayload(
           page,
           response,
-          effectiveInput.maxForms ?? 20,
-          effectiveInput.maxFields ?? DEFAULT_MAX_ELEMENTS,
-          effectiveInput.selector,
+          input.maxForms ?? 20,
+          input.maxFields ?? DEFAULT_MAX_ELEMENTS,
+          input.selector,
         ),
       );
       requestGuard.assertAllowed();
       appendDiagnostics(payload, diagnostics.payload());
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
         return buildSuccessContent(mergedPayload, captchaScreenshot);
       }
       return buildSuccessContent(payload);
     });
   } catch (error) {
-    return buildToolFailure("browse forms", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse forms", safeUrl, error, input);
   }
 }
 
 export async function handleOutline(input: OutlineToolInput) {
-  const effectiveInput = applyStealthProfile(input);
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation.
+  const safeUrl = redactUrl(input.url);
 
   try {
-    return await runBrowserOperation("browse outline", effectiveInput, async ({
+    return await runBrowserOperation("browse outline", input, async ({
       page,
       response,
       requestGuard,
@@ -94,29 +94,29 @@ export async function handleOutline(input: OutlineToolInput) {
         () => buildOutlinePayload(
           page,
           response,
-          effectiveInput.maxItems ?? DEFAULT_MAX_ELEMENTS,
-          effectiveInput.selector,
+          input.maxItems ?? DEFAULT_MAX_ELEMENTS,
+          input.selector,
         ),
       );
       requestGuard.assertAllowed();
       appendDiagnostics(payload, diagnostics.payload());
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
         return buildSuccessContent(mergedPayload, captchaScreenshot);
       }
       return buildSuccessContent(payload);
     });
   } catch (error) {
-    return buildToolFailure("browse outline", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse outline", safeUrl, error, input);
   }
 }
 
 export async function handleFind(input: FindToolInput) {
-  const effectiveInput = applyStealthProfile(input);
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation.
+  const safeUrl = redactUrl(input.url);
 
   try {
-    return await runBrowserOperation("browse find", effectiveInput, async ({
+    return await runBrowserOperation("browse find", input, async ({
       page,
       response,
       requestGuard,
@@ -128,44 +128,44 @@ export async function handleFind(input: FindToolInput) {
         () => buildFindPayload(
           page,
           response,
-          effectiveInput.query,
-          effectiveInput.maxMatches ?? 5,
-          effectiveInput.contextChars ?? 300,
-          effectiveInput.selector,
+          input.query,
+          input.maxMatches ?? 5,
+          input.contextChars ?? 300,
+          input.selector,
         ),
       );
       requestGuard.assertAllowed();
       appendDiagnostics(payload, diagnostics.payload());
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
         return buildSuccessContent(mergedPayload, captchaScreenshot);
       }
       return buildSuccessContent(payload);
     });
   } catch (error) {
-    return buildToolFailure("browse find", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse find", safeUrl, error, input);
   }
 }
 
 export async function handleScreenshot(input: ScreenshotToolInput) {
-  const effectiveInput = applyStealthProfile(input);
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation.
+  const safeUrl = redactUrl(input.url);
 
-  if (!isScreenshotDimensionAllowed(effectiveInput.viewport, effectiveInput.window)) {
+  if (!isScreenshotDimensionAllowed(input.viewport, input.window)) {
     return buildToolError(`Screenshot dimensions exceed server policy (${MAX_SCREENSHOT_WIDTH}x${MAX_SCREENSHOT_HEIGHT}).`);
   }
 
   try {
-    return await runBrowserOperation("browse screenshot", effectiveInput, async ({
+    return await runBrowserOperation("browse screenshot", input, async ({
       page,
       response,
       requestGuard,
     }) => {
       const screenshotResult = await captureScreenshot(page, safeUrl, {
-        fullPage: effectiveInput.fullPage,
-        selector: effectiveInput.selector,
-        type: effectiveInput.type,
-        quality: effectiveInput.quality,
+        fullPage: input.fullPage,
+        selector: input.selector,
+        type: input.type,
+        quality: input.quality,
       });
       requestGuard.assertAllowed();
       const payload = {
@@ -175,27 +175,29 @@ export async function handleScreenshot(input: ScreenshotToolInput) {
         contentType: response?.headers()["content-type"],
         screenshot: screenshotResult.screenshotMetadata,
       };
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
-        return buildSuccessContent(mergedPayload, screenshotResult ?? captchaScreenshot);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
+        // captureScreenshot always returns an object (base64 only on success),
+        // so the previous `screenshotResult ?? captchaScreenshot` never used the
+        // bounded challenge screenshot. Prefer the main capture only when it
+        // actually produced an image; otherwise surface the challenge capture.
+        return buildSuccessContent(mergedPayload, screenshotResult.base64 ? screenshotResult : captchaScreenshot);
       }
       return buildSuccessContent(payload, screenshotResult);
     });
   } catch (error) {
-    return buildToolFailure("browse screenshot", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse screenshot", safeUrl, error, input);
   }
 }
 
 export async function handleConsole(input: ConsoleToolInput) {
-  const effectiveInput = applyStealthProfile({
-    ...input,
-    includeConsole: true,
-    includeNetwork: false,
-  });
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation. Honor the
+  // caller's includeConsole/includeNetwork instead of forcing includeNetwork
+  // off; the schema defaults includeConsole to true for this tool.
+  const safeUrl = redactUrl(input.url);
 
   try {
-    return await runBrowserOperation("browse console", effectiveInput, async ({
+    return await runBrowserOperation("browse console", input, async ({
       page,
       response,
       requestGuard,
@@ -203,35 +205,34 @@ export async function handleConsole(input: ConsoleToolInput) {
     }) => {
       await runGuardedPageRead(page, requestGuard, () => page.title());
       requestGuard.assertAllowed();
+      const diagnosticsPayload = diagnostics.payload();
       const payload = {
         url: redactUrl(page.url()),
         title: await page.title(),
         status: response?.status(),
         contentType: response?.headers()["content-type"],
-        console: diagnostics.payload()?.console ?? [],
-        consoleTruncated: diagnostics.payload()?.consoleTruncated ?? false,
+        console: diagnosticsPayload?.console ?? [],
+        consoleTruncated: diagnosticsPayload?.consoleTruncated ?? false,
+        ...(diagnosticsPayload?.network ? { network: diagnosticsPayload.network } : {}),
       };
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
         return buildSuccessContent(mergedPayload, captchaScreenshot);
       }
       return buildSuccessContent(payload);
     });
   } catch (error) {
-    return buildToolFailure("browse console", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse console", safeUrl, error, input);
   }
 }
 
 export async function handleNetworkSummary(input: NetworkSummaryToolInput) {
-  const effectiveInput = applyStealthProfile({
-    ...input,
-    includeConsole: false,
-    includeNetwork: true,
-  });
-  const safeUrl = redactUrl(effectiveInput.url);
+  // applyStealthProfile is applied once inside runBrowserOperation. The schema
+  // defaults includeNetwork to true for this tool; includeConsole stays off.
+  const safeUrl = redactUrl(input.url);
 
   try {
-    return await runBrowserOperation("browse network summary", effectiveInput, async ({
+    return await runBrowserOperation("browse network summary", input, async ({
       page,
       response,
       requestGuard,
@@ -240,16 +241,16 @@ export async function handleNetworkSummary(input: NetworkSummaryToolInput) {
       const payload = await runGuardedPageRead(
         page,
         requestGuard,
-        () => buildNetworkSummary(page, response, diagnostics.payload(), effectiveInput.maxFailures ?? 10),
+        () => buildNetworkSummary(page, response, diagnostics.payload(), input.maxFailures ?? 10),
       );
       requestGuard.assertAllowed();
-      if (effectiveInput.captchaPolicy) {
-        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, effectiveInput.captchaPolicy, safeUrl);
+      if (input.captchaPolicy) {
+        const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(page, response, payload, input.captchaPolicy, safeUrl);
         return buildSuccessContent(mergedPayload, captchaScreenshot);
       }
       return buildSuccessContent(payload);
     });
   } catch (error) {
-    return buildToolFailure("browse network summary", safeUrl, error, effectiveInput);
+    return buildToolFailure("browse network summary", safeUrl, error, input);
   }
 }

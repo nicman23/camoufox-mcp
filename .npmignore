@@ -40,8 +40,20 @@ CHANGELOG.md
 !package.json
 !dist/
 !dist/**/*
-!plugins/
-!plugins/**/*
+# Only the runtime plugin bundle files ship; evals/iterations/reports stay out
+# (mirrors the ClawHub staging set in AGENTS.md and package.json `files`).
+!plugins/camoufox/.claude-plugin/
+!plugins/camoufox/.claude-plugin/**
+!plugins/camoufox/.codex-plugin/
+!plugins/camoufox/.codex-plugin/**
+!plugins/camoufox/.mcp.json
+!plugins/camoufox/openclaw.plugin.json
+!plugins/camoufox/package.json
+!plugins/camoufox/skills/camoufox/SKILL.md
+!plugins/camoufox/skills/camoufox/agents/
+!plugins/camoufox/skills/camoufox/agents/**
+!plugins/camoufox/skills/camoufox/references/
+!plugins/camoufox/skills/camoufox/references/**
 !.claude-plugin/
 !.claude-plugin/**/*
 !.agents/
