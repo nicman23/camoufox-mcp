@@ -8,7 +8,7 @@ issues below in one command.
 ### Common Issues
 
 1. **"Camoufox browser not found" or `browserAvailable: false` after fetch**
-   - Run `npm run fetch:camoufox` or `npx -y camoufox-js@0.10.2 fetch` to download the browser. Do **not** omit the `@0.10.2` version pin (a bare `camoufox-js fetch` pulls the latest version, which writes a layout the MCP server cannot read).
+   - Run `npm run fetch:camoufox` or `npx -y camoufox-js@0.12.0 fetch` to download the browser. Do **not** omit the `@0.12.0` version pin (a bare `camoufox-js fetch` pulls the latest version, which writes a layout the MCP server cannot read).
    - For Docker, the browser is pre-installed.
    - If the browser is downloaded but status still reports it is missing:
      - **Stale MCP Server Process:** The daemon/gateway process cached the false answer at startup. Restart the daemon/gateway, or remove and re-add the server (e.g., `hermes mcp remove camoufox && hermes mcp add ...`).
@@ -59,8 +59,8 @@ issues below in one command.
 
 10. **Browser fails to launch / `Library not loaded: @rpath/libmozglue.dylib` after changing binary versions**
     - Overlaying a new browser build onto an old cached bundle corrupts it. Wipe the cache, then refetch; do not fetch over the top:
-      `rm -rf ~/Library/Caches/camoufox/Camoufox.app ~/Library/Caches/camoufox/version.json && npx -y camoufox-js@0.10.2 fetch`
-    - Linux/Docker cache path: `rm -rf ~/.cache/camoufox && npx -y camoufox-js@0.10.2 fetch` (respects `XDG_CACHE_HOME`)
+      `rm -rf ~/Library/Caches/camoufox/Camoufox.app ~/Library/Caches/camoufox/version.json && npx -y camoufox-js@0.12.0 fetch`
+    - Linux/Docker cache path: `rm -rf ~/.cache/camoufox && npx -y camoufox-js@0.12.0 fetch` (respects `XDG_CACHE_HOME`)
     - `npm run doctor` reports a version/build mismatch and prints the wipe command
 
 11. **`Browser.setDefaultViewport ... isMobile ... not described in this scheme`, or anti-detection regressed after `npx @latest`**

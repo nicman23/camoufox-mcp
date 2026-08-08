@@ -107,7 +107,7 @@ hermes mcp test camoufox
 ```
 
 First `browse` on a fresh machine needs the browser binary once (~780MB); if a call
-reports it is missing, run `npx -y camoufox-js@0.10.2 fetch` and retry (do not omit the `@0.10.2` version pin).
+reports it is missing, run `npx -y camoufox-js@0.12.0 fetch` and retry (do not omit the `@0.12.0` version pin).
 
 Restart Hermes from a separate terminal after changing MCP config. Hermes namespaces MCP
 tools as `mcp_camoufox_<tool>` (single underscore, e.g. `mcp_camoufox_browse`,
@@ -195,7 +195,7 @@ Use Camoufox to browse https://developer.mozilla.org with images blocked and Web
 
 ## Versioning
 
-`camoufox-js` (0.10.2) and `playwright-core` (1.59.0) are pinned, fetching the Camoufox 135.0.1-beta.24 browser build. `playwright-core` is a **direct** pinned dependency (not just an `overrides` entry) because npm `overrides` only bind the root project: without a direct pin, `npx`/global installs let `camoufox-js`'s peer float `playwright-core` to the latest, and `playwright-core` 1.60+ is incompatible with the Camoufox browser (1.60 breaks a navigation guard; 1.61 sends an `isMobile` viewport option Firefox/Camoufox rejects). The pins are the newest combination that passes the full test suite. Run `npm run doctor` to check them end-to-end, and do not loosen them without re-running `npm run test:all`.
+`camoufox-js` (0.12.0) and `playwright-core` (1.59.0) are pinned, fetching the Camoufox 152.0.4-beta.28 browser build. `playwright-core` is a **direct** pinned dependency (not just an `overrides` entry) because npm `overrides` only bind the root project: without a direct pin, `npx`/global installs let `camoufox-js`'s peer float `playwright-core` to the latest, and `playwright-core` 1.60+ is incompatible with the Camoufox browser (1.60 breaks a navigation guard; 1.61 sends an `isMobile` viewport option Firefox/Camoufox rejects). The pins are the newest combination that passes the full test suite. Run `npm run doctor` to check them end-to-end, and do not loosen them without re-running `npm run test:all`.
 
 ## Documentation
 

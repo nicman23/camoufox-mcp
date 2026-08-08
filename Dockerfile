@@ -21,15 +21,15 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
-# Fetch the browser
-RUN npx camoufox-js fetch
+# Fetch the browser (pinned camoufox-js@0.12.0 via package.json fetch:camoufox script)
+RUN npm run fetch:camoufox
 
 FROM node:22-bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb xauth \
     libgtk-3-0 libx11-xcb1 libxfixes3 libxrandr2 libxtst6 libx11-6 libxcomposite1 \
-    libasound2 libdbus-glib-1-2 libpci3 libxss1 libgconf-2-4 libnss3 libatk1.0-0 \
+    libasound2 libdbus-glib-1-2 libpci3 libxss1 libnss3 libatk1.0-0 \
     libatk-bridge2.0-0 libcups2 libdrm2 libgbm1 libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 

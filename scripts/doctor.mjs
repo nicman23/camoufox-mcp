@@ -18,10 +18,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // "Dependency & Browser Pinning" section in CLAUDE.md. Bump here + there
 // together when the gated upgrade in that section is adopted.
 const EXPECTED = {
-  camoufoxJs: "0.10.2",
+  camoufoxJs: "0.12.0",
   playwrightCore: "1.59.0",
-  binaryVersion: "135.0.1",
-  binaryRelease: "beta.24",
+  binaryVersion: "152.0.4",
+  binaryRelease: "beta.28",
 };
 
 const req = (p) => JSON.parse(readFileSync(join(ROOT, p), "utf8"));
@@ -142,7 +142,45 @@ function smokeTest() {
 
     const p = spawn("node", [distPath], { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
-    p.stdout.on("data", (d) => (out += d.toString()));
+    // Parse responses as they arrive so the smoke test resolves as soon as both
+    // the status (id 2) and browse (id 3) results are in, instead of always
+    // waiting the full 30s fallback. The 30s timer remains the upper bound for a
+    // hung/dead browser.
+    let statusOk = false;
+    let browseOk = false;
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (statusOk) ok("camoufox_status.browserAvailable = true");
+      else fail("camoufox_status did not report browserAvailable=true", "check `npm run fetch:camoufox` and server logs (`node dist/index.js`)");
+      if (browseOk) ok("browse https://example.com returned (metadata)");
+      else fail("browse smoke test did not return a non-error result", "run `node dist/index.js` and inspect stderr");
+      try { p.kill(); } catch {}
+      resolve();
+    };
+
+    const consume = () => {
+      if (settled) return;
+      for (const line of out.split("\n").filter(Boolean)) {
+        let msg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.id === 2 && !statusOk) {
+          const sc = msg.result?.structuredContent ?? {};
+          statusOk = sc.browserAvailable === true;
+        }
+        if (msg.id === 3 && !browseOk) {
+          browseOk = msg.result && msg.result.isError !== true;
+        }
+      }
+      if (statusOk && browseOk) {
+        finish();
+      }
+    };
+
+    p.stdout.on("data", (d) => { out += d.toString(); consume(); });
     p.stderr.on("data", () => {});
 
     p.stdin.write(rpc(1, "initialize", {
@@ -156,29 +194,9 @@ function smokeTest() {
       arguments: { url: "https://example.com", waitStrategy: "domcontentloaded", outputMode: "metadata" },
     })), 1400);
 
-    const done = () => {
-      let statusOk = false;
-      let browseOk = false;
-      for (const line of out.split("\n").filter(Boolean)) {
-        let msg;
-        try { msg = JSON.parse(line); } catch { continue; }
-        if (msg.id === 2) {
-          const sc = msg.result?.structuredContent ?? {};
-          statusOk = sc.browserAvailable === true;
-        }
-        if (msg.id === 3) {
-          browseOk = msg.result && msg.result.isError !== true;
-        }
-      }
-      if (statusOk) ok("camoufox_status.browserAvailable = true");
-      else fail("camoufox_status did not report browserAvailable=true", "check `npm run fetch:camoufox` and server logs (`node dist/index.js`)");
-      if (browseOk) ok("browse https://example.com returned (metadata)");
-      else fail("browse smoke test did not return a non-error result", "run `node dist/index.js` and inspect stderr");
-      try { p.kill(); } catch {}
-      resolve();
-    };
-    setTimeout(done, 30000);
-    p.on("exit", () => {}); // keep the timeout as the single completion point
+    const timer = setTimeout(finish, 30000);
+    // If the server dies before either response, report what we have.
+    p.on("exit", () => finish());
   });
 }
 

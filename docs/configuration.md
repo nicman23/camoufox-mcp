@@ -99,7 +99,7 @@ Hermes skills do not automatically install MCP servers, so configure the `camouf
 
 > **Hermes TTY Gotcha:** `hermes mcp add` interactively prompts `"Enable all 17 tools? [Y/n/select]"`. On a non-TTY (piped input/scripts), the default response is `"n"` (canceled). You must pipe `Y\n` as shown in the example command above to automatically accept and enable all tools.
 
-On a fresh machine the first `browse` needs the browser binary once (~780MB). If a call reports it is missing, run `npx -y camoufox-js@0.10.2 fetch` and retry (do not omit the version pin).
+On a fresh machine the first `browse` needs the browser binary once (~780MB). If a call reports it is missing, run `npx -y camoufox-js@0.12.0 fetch` and retry (do not omit the version pin).
 
 The resulting config should look like this:
 

@@ -28,7 +28,7 @@ This skill does not start the server. Confirm an MCP server named `camoufox` is 
 
 Bare `npx -y camoufox-mcp-server@latest` remains safe by default unless the host config adds that env var.
 
-On a fresh machine the first `browse` needs the Camoufox binary (~780MB), which npx installs do not prefetch. If a call returns `Camoufox browser binary not installed. Run: npx -y camoufox-js@0.10.2 fetch`, run that one-time command (it lands in the shared OS cache; do not omit the version pin) and retry.
+On a fresh machine the first `browse` needs the Camoufox binary (~780MB), which npx installs do not prefetch. If a call returns `Camoufox browser binary not installed. Run: npx -y camoufox-js@0.12.0 fetch`, run that one-time command (it lands in the shared OS cache; do not omit the version pin) and retry.
 
 ## Bring the Server Up (operator / local checkout)
 
@@ -305,6 +305,6 @@ Common failures:
 - **`evaluate` rejected**: `CAMOUFOX_MCP_ALLOW_EVALUATE` not set (`evaluateAllowed: false`).
 - **Hanging navigation**: a call overrode `waitStrategy` to `load`/`networkidle`; revert to `domcontentloaded` and try a shorter `timeout`.
 - **Empty output**: narrow with `selector`, switch to `browse_snapshot`, or check `browse_console` and `browse_network_summary`.
-- **Browser won't launch / `Library not loaded: @rpath/libmozglue.dylib`**: a corrupt or mismatched binary cache, usually from fetching a new build over an old one. Wipe the cache and refetch rather than overlaying: `rm -rf ~/Library/Caches/camoufox/Camoufox.app ~/Library/Caches/camoufox/version.json && npx -y camoufox-js@0.10.2 fetch` (Linux: `rm -rf ~/.cache/camoufox && npx -y camoufox-js@0.10.2 fetch`). `npm run doctor` reports the mismatch and prints this command.
+- **Browser won't launch / `Library not loaded: @rpath/libmozglue.dylib`**: a corrupt or mismatched binary cache, usually from fetching a new build over an old one. Wipe the cache and refetch rather than overlaying: `rm -rf ~/Library/Caches/camoufox/Camoufox.app ~/Library/Caches/camoufox/version.json && npx -y camoufox-js@0.12.0 fetch` (Linux: `rm -rf ~/.cache/camoufox && npx -y camoufox-js@0.12.0 fetch`). `npm run doctor` reports the mismatch and prints this command.
 - **`Error: ENOSPC: no space left on device` during fetch**: The ~780MB binary extracts via `/tmp/camoufox-*` temporary directories. On cloud VMs/containers with small `/tmp` tmpfs limits (e.g., 1-2GB), failed attempts leave behind ~680MB temp directories that cause disk space errors on retry. Clean them up with `rm -rf /tmp/camoufox-*` (safe if no live processes own them) before refetching.
 - **Anti-detection suddenly worse / Juggler errors after `npx @latest`**: `camoufox-js` floats `playwright-core`, so a foreign install can drift it off the pinned version. On a checkout the `overrides` pin holds it; `npm run doctor` flags a drift.
