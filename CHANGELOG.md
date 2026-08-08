@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-08-07
+
 ### Added
 - Real MCP output schemas for `browse`, `browse_snapshot`, `browse_sequence`, `browse_screenshot`, `browse_console`, and all six `browse_session_*` tools. Previously these advertised an empty passthrough output schema while the focused extractors (links/forms/outline/find/network_summary) declared real ones; clients can now introspect the structured result shape of every tool.
 
@@ -19,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI `release` job now also depends on `publish-clawhub`, so a GitHub Release is only cut after the ClawHub bundle publishes successfully (previously a failed ClawHub publish still released a version ClawHub didn't have).
 - `registerJsonTool` no longer redeclares the SDK's `registerTool` signature through `unknown`; it narrows the callback to the SDK's `ToolCallback` type at the boundary, which is less fragile across SDK upgrades.
 - Narrowed the npm package `files` globs so the published tarball ships only the runtime plugin bundle (9 files) instead of all 71 files under `plugins/`, excluding generated eval/iteration/reports content that the ClawHub staging already omits.
+
+### Fixed
+- Docker runtime stage no longer runs `npm ci` in the slim image: `better-sqlite3` 13 (pulled in by `camoufox-js` 0.12.0) has no prebuilt binary for that target and the slim image has no compiler toolchain. The builder stage now runs `npm prune --omit=dev` after building and the runtime stage copies `node_modules` as-is.
 
 ### Security
 - Dependency refresh: `npm audit` clean (was 11 vulnerabilities: 7 high, 3 moderate, 1 low). Lockfile bumps cover all open Dependabot PRs (fast-uri, hono, brace-expansion, ip-address, body-parser); `adm-zip` forced to `^0.6.0` via overrides (GHSA-xcpc-8h2w-3j85, `camoufox-js` 0.12.0 now also requires `^0.6.0` directly); `js-yaml` override bumped 4.2.0 -> 4.3.1 (the old override was itself vulnerable).

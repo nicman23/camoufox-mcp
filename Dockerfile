@@ -24,6 +24,11 @@ RUN npm run build
 # Fetch the browser (pinned camoufox-js@0.12.0 via package.json fetch:camoufox script)
 RUN npm run fetch:camoufox
 
+# Drop dev dependencies after build so the runtime stage can copy node_modules
+# as-is. better-sqlite3 13 has no prebuilt binary for this target, so the
+# runtime slim image (no python3/gcc) cannot run its own npm ci.
+RUN npm prune --omit=dev
+
 FROM node:22-bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,7 +43,7 @@ USER myappuser
 WORKDIR /home/myappuser/app
 
 COPY --from=builder /app/package.json /app/package-lock.json* ./
-RUN npm ci --omit=dev
+COPY --from=builder --chown=myappuser:myappuser /app/node_modules ./node_modules
 
 COPY --from=builder --chown=myappuser:myappuser /app/dist ./dist
 COPY --from=builder --chown=myappuser:myappuser /root/.cache/camoufox /home/myappuser/.cache/camoufox
