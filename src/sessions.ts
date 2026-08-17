@@ -27,10 +27,10 @@ export function sessionExpiresAt(session: SessionRecord): string {
 
 export function resetSessionTtl(session: SessionRecord): void {
   clearTimeout(session.timer);
-  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  session.expiresAt = Date.now() + session.ttlMs;
   session.timer = setTimeout(() => {
     void closeSession(session.id, "expired");
-  }, SESSION_TTL_MS);
+  }, session.ttlMs);
 }
 
 export function reserveSessionSlot(): boolean {
@@ -235,6 +235,7 @@ export async function handleSessionStart(input: SessionStartToolInput) {
       selectedOS,
       waitStrategy,
       captchaPolicy,
+      ttlMs,
       releaseSlot: release,
       rawUrls,
       secrets,

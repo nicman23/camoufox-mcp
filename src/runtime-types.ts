@@ -33,6 +33,7 @@ export interface SessionRecord {
   // drives detection on every subsequent navigate/action/snapshot/resume without
   // the caller re-passing captchaPolicy on each call.
   captchaPolicy: CaptchaPolicy;
+  ttlMs: number;
   releaseSlot: SlotRelease;
   rawUrls: string[];
   secrets: string[];
