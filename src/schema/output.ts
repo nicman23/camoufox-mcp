@@ -328,6 +328,7 @@ export const sessionNavigateOutputSchema = z.object({
   selectorFound: z.boolean().optional(),
   text: z.string().optional(),
   html: z.string().optional(),
+  screenshot: screenshotMetadataOutputSchema,
   diagnostics: diagnosticsOutputSchema,
   ...captchaDetectionOutputShape,
 });
@@ -354,6 +355,7 @@ export const sessionActionOutputSchema = z.object({
     elementsTruncated: z.boolean(),
     diagnostics: diagnosticsOutputSchema,
   }),
+  screenshot: screenshotMetadataOutputSchema,
   ...captchaDetectionOutputShape,
 });
 
@@ -375,6 +377,7 @@ const sessionSnapshotBaseSchema = z.object({
   ariaSnapshotError: z.string().optional(),
   elements: z.array(snapshotElementOutputSchema),
   elementsTruncated: z.boolean(),
+  screenshot: screenshotMetadataOutputSchema,
   diagnostics: diagnosticsOutputSchema,
   ...captchaDetectionOutputShape,
 });

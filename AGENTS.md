@@ -221,9 +221,31 @@ Start and manipulate isolated, short-lived browser sessions. Sessions are epheme
 - Click actions support `clickMode`: `dom` is the default CI/Xvfb-stable DOM activation path, `pointer` uses Playwright pointer input, and `auto` tries pointer first before DOM fallback.
 - `camoufox_status.networkSecurity` reports application-layer best-effort SSRF policy and conservative network sandbox posture. Docker/container detection is not proof of egress filtering.
 - CAPTCHA handling is manual by default. `captchaPolicy: "attempt"` returns challenge metadata, interactive elements, a bounded screenshot, and a suggested strategy. When `CAPTCHA_AUTONOMOUS=true` is set, responses use `challengeHandling: "llm_assisted"` and include provider-specific `challengePlaybook` context when known. The server never solves CAPTCHAs itself or invokes an external skill.
-- Browser instances are created per request (not persisted)
+- **Persistent profiles:** Sessions use `userDataDir` (Playwright persistent context) so cookies, localStorage, and browser fingerprint survive across browser restarts. Each session gets its own profile at `$CAMOUFOX_MCP_PROFILE_DIR/<sessionId>` (default: `~/.camoufox-mcp/profiles/`). One-shot tools (`browse`, `browse_sequence`) still use non-persistent ephemeral browsers.
 - Error handling includes detailed error messages for debugging
 - Process lifecycle is managed with proper cleanup on exit
 - Cross-platform support with architecture-specific browser fetching
-- Screenshot capture returns base64-encoded PNG data
+- Screenshot capture defaults to JPEG q80 (smaller base64 payload, ~3-5x less context than PNG). Use `screenshotType: "png"` for lossless quality when needed.
 - Enhanced logging with colored output for better debugging
+
+## Vision-Heavy Tasks: Use Subagents
+
+When a browser automation task requires inspecting screenshots to make decisions (e.g., solving a visual CAPTCHA, identifying and clicking a specific image, reading text from a rendered page), **delegate to a subagent** rather than processing the image in the main conversation context.
+
+**Why:** Each screenshot consumes significant context (even JPEG q80 at ~100 KB is ~130K base64 chars). Vision-heavy workflows that take multiple screenshots quickly exhaust the main context window, degrading the quality of all other reasoning in the session.
+
+**Pattern:**
+1. Main agent navigates and captures a screenshot (or uses `captchaPolicy: "attempt"` to get challenge context).
+2. Spawn a subagent with the screenshot task: "Given this page state, identify the target element and return its CSS selector / coordinates."
+3. Subagent inspects the image, returns a concise answer (selector, coordinates, or action to take).
+4. Main agent executes the returned action via `browse_session_action`.
+
+**When to delegate:**
+- Solving visual CAPTCHAs (image selection, text transcription)
+- Finding and clicking a specific visual element (ad, banner, thumbnail)
+- Verifying visual state (layout, colors, rendered content)
+- Any task requiring 2+ screenshot inspections
+
+**When NOT to delegate:**
+- Simple text extraction (use `outputMode: "text"` instead)
+- Single confirmation screenshot (just include it in the main context)

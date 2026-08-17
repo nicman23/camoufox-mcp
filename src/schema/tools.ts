@@ -8,8 +8,7 @@ import {
   MAX_MAX_ELEMENTS,
   MAX_SEQUENCE_ACTIONS,
 } from "../config.js";
-import type { WindowSize } from "../types.js";
-import { captchaPolicySchema, screenshotOptionsSchema, stealthProfileSchema, viewportSchema, windowSchema, proxySchema } from "./primitives.js";
+import { captchaPolicySchema, stealthProfileSchema, viewportSchema, proxySchema } from "./primitives.js";
 
 export const commonBrowserOptionShape = {
   os: z.enum(["windows", "macos", "linux"]).optional().describe("Optional OS to spoof. Can be 'windows', 'macos', or 'linux'. If not specified, will rotate between all OS types."),
@@ -21,10 +20,10 @@ export const commonBrowserOptionShape = {
   block_webrtc: z.boolean().optional().describe("Block WebRTC entirely for enhanced privacy and stealth."),
   proxy: proxySchema,
   enable_cache: z.boolean().optional().describe("Cache pages, requests, etc. Uses more memory but improves performance when revisiting pages."),
-  firefox_user_prefs: z.record(z.string(), z.any()).optional().describe("Custom Firefox user preferences to set. Rejected unless CAMOUFOX_MCP_ALLOW_UNSAFE_OPTIONS=1; denied prefs are always rejected."),
+  firefox_user_prefs: z.string().optional().describe("JSON object of custom Firefox user preferences (e.g., '{\"browser.send_pings\": false}'). Rejected unless CAMOUFOX_MCP_ALLOW_UNSAFE_OPTIONS=1."),
   exclude_addons: z.array(z.string()).optional().describe("List of default addons to exclude (e.g., ['ublock_origin']). Rejected unless CAMOUFOX_MCP_ALLOW_UNSAFE_OPTIONS=1."),
-  window: windowSchema,
-  args: z.array(z.string()).optional().describe("Additional browser command-line arguments to pass to the browser. Rejected unless CAMOUFOX_MCP_ALLOW_UNSAFE_OPTIONS=1; denied args are always rejected."),
+  window: z.string().optional().describe("Fixed window size as 'widthxheight' (e.g., '1920x1080'). Overrides random generation."),
+  args: z.array(z.string()).optional().describe("Additional browser command-line arguments. Rejected unless CAMOUFOX_MCP_ALLOW_UNSAFE_OPTIONS=1."),
   block_images: z.boolean().optional().describe("Block all images for faster loading, reduced bandwidth, and lightweight browsing."),
   block_webgl: z.boolean().optional().describe("Block WebGL to prevent fingerprinting and tracking."),
   disable_coop: z.boolean().optional().describe("Disable Cross-Origin-Opener-Policy for sites that require it."),
@@ -48,7 +47,9 @@ export const browseToolShape = {
   maxChars: z.number().int().min(1000).max(MAX_MAX_CHARS).optional().default(DEFAULT_MAX_CHARS).describe("Maximum text or HTML characters to return."),
   selector: z.string().max(2000).optional().describe("Optional CSS selector to limit extraction to one matching element."),
   screenshot: z.boolean().optional().default(false).describe("Capture a screenshot/image of the page after loading."),
-  screenshotOptions: screenshotOptionsSchema,
+  screenshotFullPage: z.boolean().optional().describe("Capture full page instead of viewport (screenshot only)."),
+  screenshotType: z.enum(["png", "jpeg"]).optional().describe("Screenshot image format. Defaults to 'jpeg'. Use 'png' for lossless quality."),
+  screenshotQuality: z.number().int().min(1).max(100).optional().describe("JPEG quality 1-100. Defaults to 80. Ignored for PNG."),
 };
 
 export const snapshotToolShape = {
@@ -58,77 +59,14 @@ export const snapshotToolShape = {
   selector: z.string().max(2000).optional().describe("Optional CSS selector to limit snapshot extraction to one matching element."),
 };
 
-export const actionTimeoutSchema = z.number().min(100).max(60000).optional();
-export const frameSchema = z.string().max(2000).optional()
-  .describe("CSS selector of an iframe. The action's selector is resolved inside this iframe.");
-
-export const sequenceActionSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("click"),
-    selector: z.string().max(2000),
-    frame: frameSchema,
-    clickMode: z.enum(["dom", "pointer", "auto"]).optional().default("dom")
-      .describe("Click implementation. 'dom' uses DOM activation for CI stability. 'pointer' uses Playwright pointer input. 'auto' tries pointer first and falls back to DOM activation."),
-    timeout: actionTimeoutSchema,
-  }),
-  z.object({
-    type: z.literal("hover"),
-    selector: z.string().max(2000),
-    frame: frameSchema,
-    timeout: actionTimeoutSchema,
-  }),
-  z.object({
-    type: z.literal("fill"),
-    selector: z.string().max(2000),
-    frame: frameSchema,
-    value: z.string().max(MAX_MAX_CHARS),
-    timeout: actionTimeoutSchema,
-  }),
-  z.object({
-    type: z.literal("type"),
-    selector: z.string().max(2000),
-    frame: frameSchema,
-    text: z.string().max(MAX_MAX_CHARS),
-    delay: z.number().min(0).max(1000).optional().default(0),
-    timeout: actionTimeoutSchema,
-  }),
-  z.object({
-    type: z.literal("select"),
-    selector: z.string().max(2000),
-    frame: frameSchema,
-    value: z.union([z.string(), z.array(z.string())]),
-    timeout: actionTimeoutSchema,
-  }),
-  z.object({
-    type: z.literal("press"),
-    selector: z.string().max(2000).optional(),
-    frame: frameSchema,
-    key: z.string().min(1).max(100),
-    timeout: actionTimeoutSchema,
-  }),
-  z.object({
-    type: z.literal("waitFor"),
-    selector: z.string().max(2000).optional(),
-    frame: frameSchema,
-    state: z.enum(["attached", "detached", "visible", "hidden"]).optional().default("visible"),
-    loadState: z.enum(["domcontentloaded", "load", "networkidle"]).optional(),
-    timeout: actionTimeoutSchema,
-  }),
-  z.object({
-    type: z.literal("scroll"),
-    selector: z.string().max(2000).optional(),
-    frame: frameSchema,
-    deltaX: z.number().min(-10000).max(10000).optional().default(0),
-    deltaY: z.number().min(-10000).max(10000).optional().default(600),
-    timeout: actionTimeoutSchema,
-  }),
-  z.object({
-    type: z.literal("evaluate"),
-    expression: z.string().max(4000),
-    timeout: actionTimeoutSchema,
-    maxChars: z.number().int().min(100).max(MAX_MAX_CHARS).optional().default(DEFAULT_MAX_CHARS),
-  }),
-]);
+export const sequenceActionSchema = z.object({
+  action: z.string().describe("Action type: click, hover, fill, type, select, press, waitFor, scroll, evaluate."),
+  selector: z.string().optional().describe("CSS selector of the target element."),
+  value: z.string().optional().describe("Primary value: text to fill/type, key to press, expression to evaluate, dropdown value."),
+  option: z.string().optional().describe("Secondary option: delay ms (type), state (waitFor), loadState (waitFor), clickMode (click), maxChars (evaluate)."),
+  dx: z.string().optional().describe("Horizontal scroll pixels (scroll)."),
+  dy: z.string().optional().describe("Vertical scroll pixels (scroll)."),
+});
 
 export const sequenceToolShape = {
   ...commonBrowserToolShape,
@@ -138,7 +76,9 @@ export const sequenceToolShape = {
   selector: z.string().max(2000).optional().describe("Optional CSS selector to limit final content extraction to one matching element."),
   maxElements: z.number().int().min(1).max(MAX_MAX_ELEMENTS).optional().default(DEFAULT_MAX_ELEMENTS).describe("Maximum final snapshot elements to return."),
   screenshot: z.boolean().optional().default(false).describe("Capture a screenshot/image after all actions finish."),
-  screenshotOptions: screenshotOptionsSchema,
+  screenshotFullPage: z.boolean().optional().describe("Capture full page instead of viewport (screenshot only)."),
+  screenshotType: z.enum(["png", "jpeg"]).optional().describe("Screenshot image format. Defaults to 'jpeg'. Use 'png' for lossless quality."),
+  screenshotQuality: z.number().int().min(1).max(100).optional().describe("JPEG quality 1-100. Defaults to 80. Ignored for PNG."),
 };
 
 export const selectorLimitShape = {
@@ -176,8 +116,8 @@ export const screenshotToolShape = {
   ...commonBrowserToolShape,
   selector: z.string().max(2000).optional().describe("Optional CSS selector for element-only screenshots."),
   fullPage: z.boolean().optional().default(false).describe("Capture the full page instead of only the viewport."),
-  type: z.enum(["png", "jpeg"]).optional().default("png").describe("Screenshot image type."),
-  quality: z.number().int().min(1).max(100).optional().describe("JPEG quality from 1-100. Ignored for PNG."),
+  type: z.enum(["png", "jpeg"]).optional().default("jpeg").describe("Screenshot image type. Defaults to 'jpeg'. Use 'png' for lossless quality."),
+  quality: z.number().int().min(1).max(100).optional().describe("JPEG quality from 1-100. Defaults to 80. Ignored for PNG."),
 };
 
 export const consoleToolShape = {
@@ -212,6 +152,10 @@ export const sessionNavigateToolShape = {
   outputMode: z.enum(["text", "html", "metadata"]).optional().default("text").describe("Response content mode."),
   maxChars: z.number().int().min(100).max(MAX_MAX_CHARS).optional().default(DEFAULT_MAX_CHARS).describe("Maximum text or HTML characters to return."),
   selector: z.string().max(2000).optional().describe("Optional CSS selector to limit extraction."),
+  screenshot: z.boolean().optional().default(false).describe("Capture a screenshot/image of the page after navigation."),
+  screenshotFullPage: z.boolean().optional().describe("Capture full page instead of viewport (screenshot only)."),
+  screenshotType: z.enum(["png", "jpeg"]).optional().describe("Screenshot image format. Defaults to 'jpeg'. Use 'png' for lossless quality."),
+  screenshotQuality: z.number().int().min(1).max(100).optional().describe("JPEG quality 1-100. Defaults to 80. Ignored for PNG."),
   captchaPolicy: captchaPolicySchema,
 };
 
@@ -221,6 +165,10 @@ export const sessionActionToolShape = {
   maxChars: z.number().int().min(100).max(MAX_MAX_CHARS).optional().default(DEFAULT_MAX_CHARS).describe("Maximum final visible text characters to return in snapshot."),
   maxElements: z.number().int().min(1).max(MAX_MAX_ELEMENTS).optional().default(DEFAULT_MAX_ELEMENTS).describe("Maximum final snapshot elements to return."),
   selector: z.string().max(2000).optional().describe("Optional CSS selector to limit final snapshot."),
+  screenshot: z.boolean().optional().default(false).describe("Capture a screenshot/image after the action."),
+  screenshotFullPage: z.boolean().optional().describe("Capture full page instead of viewport (screenshot only)."),
+  screenshotType: z.enum(["png", "jpeg"]).optional().describe("Screenshot image format. Defaults to 'jpeg'. Use 'png' for lossless quality."),
+  screenshotQuality: z.number().int().min(1).max(100).optional().describe("JPEG quality 1-100. Defaults to 80. Ignored for PNG."),
   captchaPolicy: captchaPolicySchema,
 };
 
@@ -229,6 +177,10 @@ export const sessionSnapshotToolShape = {
   maxChars: z.number().int().min(100).max(MAX_MAX_CHARS).optional().default(DEFAULT_MAX_CHARS).describe("Maximum visible text and ARIA snapshot characters to return."),
   maxElements: z.number().int().min(1).max(MAX_MAX_ELEMENTS).optional().default(DEFAULT_MAX_ELEMENTS).describe("Maximum interactive elements to return."),
   selector: z.string().max(2000).optional().describe("Optional CSS selector to limit snapshot extraction."),
+  screenshot: z.boolean().optional().default(false).describe("Capture a screenshot/image of the current page state."),
+  screenshotFullPage: z.boolean().optional().describe("Capture full page instead of viewport (screenshot only)."),
+  screenshotType: z.enum(["png", "jpeg"]).optional().describe("Screenshot image format. Defaults to 'jpeg'. Use 'png' for lossless quality."),
+  screenshotQuality: z.number().int().min(1).max(100).optional().describe("JPEG quality 1-100. Defaults to 80. Ignored for PNG."),
   captchaPolicy: captchaPolicySchema,
 };
 
@@ -242,19 +194,18 @@ export const sessionCloseToolShape = {
   ...sessionIdShape,
 };
 
-export type WithWindowSize<T> = Omit<T, "window"> & { window?: WindowSize };
-export type BrowseToolInput = WithWindowSize<z.infer<z.ZodObject<typeof browseToolShape>>>;
-export type SnapshotToolInput = WithWindowSize<z.infer<z.ZodObject<typeof snapshotToolShape>>>;
-export type SequenceToolInput = WithWindowSize<z.infer<z.ZodObject<typeof sequenceToolShape>>>;
+export type BrowseToolInput = z.infer<z.ZodObject<typeof browseToolShape>>;
+export type SnapshotToolInput = z.infer<z.ZodObject<typeof snapshotToolShape>>;
+export type SequenceToolInput = z.infer<z.ZodObject<typeof sequenceToolShape>>;
 export type SequenceAction = z.infer<typeof sequenceActionSchema>;
-export type LinksToolInput = WithWindowSize<z.infer<z.ZodObject<typeof linksToolShape>>>;
-export type FormsToolInput = WithWindowSize<z.infer<z.ZodObject<typeof formsToolShape>>>;
-export type OutlineToolInput = WithWindowSize<z.infer<z.ZodObject<typeof outlineToolShape>>>;
-export type FindToolInput = WithWindowSize<z.infer<z.ZodObject<typeof findToolShape>>>;
-export type ScreenshotToolInput = WithWindowSize<z.infer<z.ZodObject<typeof screenshotToolShape>>>;
-export type ConsoleToolInput = WithWindowSize<z.infer<z.ZodObject<typeof consoleToolShape>>>;
-export type NetworkSummaryToolInput = WithWindowSize<z.infer<z.ZodObject<typeof networkSummaryToolShape>>>;
-export type SessionStartToolInput = WithWindowSize<z.infer<z.ZodObject<typeof sessionStartToolShape>>>;
+export type LinksToolInput = z.infer<z.ZodObject<typeof linksToolShape>>;
+export type FormsToolInput = z.infer<z.ZodObject<typeof formsToolShape>>;
+export type OutlineToolInput = z.infer<z.ZodObject<typeof outlineToolShape>>;
+export type FindToolInput = z.infer<z.ZodObject<typeof findToolShape>>;
+export type ScreenshotToolInput = z.infer<z.ZodObject<typeof screenshotToolShape>>;
+export type ConsoleToolInput = z.infer<z.ZodObject<typeof consoleToolShape>>;
+export type NetworkSummaryToolInput = z.infer<z.ZodObject<typeof networkSummaryToolShape>>;
+export type SessionStartToolInput = z.infer<z.ZodObject<typeof sessionStartToolShape>>;
 export type SessionNavigateToolInput = z.infer<z.ZodObject<typeof sessionNavigateToolShape>>;
 export type SessionActionToolInput = z.infer<z.ZodObject<typeof sessionActionToolShape>>;
 export type SessionSnapshotToolInput = z.infer<z.ZodObject<typeof sessionSnapshotToolShape>>;

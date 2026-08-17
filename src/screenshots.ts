@@ -29,7 +29,7 @@ export async function captureCaptchaScreenshot(page: Page, safeUrl: string): Pro
 }
 
 export async function captureScreenshot(page: Page, safeUrl: string, options?: ScreenshotOptions): Promise<ScreenshotResult> {
-  const type = options?.type ?? "png";
+  const type = options?.type ?? "jpeg";
   const screenshotMetadata: ScreenshotMetadata = {
     requested: true,
     included: false,
@@ -41,7 +41,7 @@ export async function captureScreenshot(page: Page, safeUrl: string, options?: S
   const mimeType = type === "jpeg" ? "image/jpeg" : "image/png";
   const baseOptions = {
     type,
-    quality: type === "jpeg" ? options?.quality : undefined,
+    quality: type === "jpeg" ? (options?.quality ?? 80) : undefined,
   };
 
   try {
