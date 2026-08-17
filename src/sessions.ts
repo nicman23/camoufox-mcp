@@ -224,6 +224,7 @@ export async function handleSessionStart(input: SessionStartToolInput) {
     const rawUrls = [getProxyServer(effectiveInput.proxy)].filter((rawUrl): rawUrl is string => Boolean(rawUrl));
     const secrets = getProxySecrets(effectiveInput.proxy);
     const now = Date.now();
+    const ttlMs = input.ttlMs ?? SESSION_TTL_MS;
     const session: SessionRecord = {
       id,
       browser,
@@ -238,10 +239,10 @@ export async function handleSessionStart(input: SessionStartToolInput) {
       rawUrls,
       secrets,
       createdAt: now,
-      expiresAt: now + SESSION_TTL_MS,
+      expiresAt: now + ttlMs,
       timer: setTimeout(() => {
         void closeSession(id, "expired");
-      }, SESSION_TTL_MS),
+      }, ttlMs),
       lastNavigationResponse: null,
       op: Promise.resolve(),
       closing: false,

@@ -138,6 +138,7 @@ export const networkSummaryToolShape = {
 
 export const sessionStartToolShape = {
   ...commonBrowserOptionShape,
+  ttlMs: z.number().int().min(30000).max(86400000).optional().describe("Session time-to-live in milliseconds (30s to 24h). Defaults to server config (CAMOUFOX_MCP_SESSION_TTL_MS, 10 min)."),
 };
 
 export const sessionIdShape = {
