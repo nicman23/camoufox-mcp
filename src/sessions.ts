@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import type { Browser, Response } from "playwright-core";
 import chalk from "chalk";
 import { validateTargetUrl } from "./policy.js";
-import { DEFAULT_ACTION_TIMEOUT_MS, DEFAULT_MAX_CHARS, DEFAULT_MAX_ELEMENTS, DEFAULT_WAIT_STRATEGY, MAX_SESSIONS, SESSION_CLOSE_GRACE_MS, SESSION_TTL_MS } from "./config.js";
-import type { CaptchaPolicy, SessionRecord, SlotRelease, WaitStrategy } from "./types.js";
+import { DEFAULT_ACTION_TIMEOUT_MS, DEFAULT_MAX_CHARS, DEFAULT_MAX_ELEMENTS, DEFAULT_WAIT_STRATEGY, MAX_SESSIONS, PROFILE_DIR, SESSION_CLOSE_GRACE_MS, SESSION_TTL_MS } from "./config.js";
+import type { CaptchaPolicy, ScreenshotOptions, ScreenshotResult, SessionRecord, SlotRelease, WaitStrategy } from "./types.js";
 import type { SessionActionToolInput, SessionCloseToolInput, SessionNavigateToolInput, SessionResumeToolInput, SessionSnapshotToolInput, SessionStartToolInput } from "./schemas.js";
-import { acquireBrowserSlot, browserContextOptions, buildCamoufoxOptions, closeBrowser, installRequestGuard, launchCamoufoxBrowser, runGuardedPageRead, settleAndAssertSafe, trackBrowser, validateBrowserOptionsInput } from "./browser-runtime.js";
+import { acquireBrowserSlot, browserContextOptions, buildCamoufoxOptions, closeBrowser, installRequestGuard, launchCamoufoxBrowser, launchPersistentCamoufox, runGuardedPageRead, settleAndAssertSafe, trackBrowser, validateBrowserOptionsInput } from "./browser-runtime.js";
 import { createDiagnosticsCollector } from "./diagnostics.js";
 import { buildBrowsePayload, buildSnapshotPayload } from "./extractors.js";
 import { maybeDetectCaptcha } from "./captcha.js";
+import { captureScreenshot } from "./screenshots.js";
 import { buildSuccessContent, buildToolError } from "./responses.js";
 import { isLocalOperationTimeout, runSequenceAction } from "./sequence.js";
 import { applyStealthProfile, defaultHeadlessMode, describeError, getProxySecrets, getProxyServer, redactUrl, sanitizeErrorMessage, selectOperatingSystem } from "./utils.js";
@@ -41,6 +44,21 @@ export function reserveSessionSlot(): boolean {
 
 export function releaseSessionSlot(): void {
   reservedSessions = Math.max(0, reservedSessions - 1);
+}
+
+function sessionScreenshotOptions(input: { screenshot?: boolean; screenshotFullPage?: boolean; screenshotType?: "png" | "jpeg"; screenshotQuality?: number }): ScreenshotOptions | undefined {
+  if (!input.screenshot) return undefined;
+  return { fullPage: input.screenshotFullPage, type: input.screenshotType, quality: input.screenshotQuality };
+}
+
+async function captureSessionScreenshot(page: Parameters<typeof captureScreenshot>[0], safeUrl: string, input: { screenshot?: boolean; screenshotFullPage?: boolean; screenshotType?: "png" | "jpeg"; screenshotQuality?: number }): Promise<ScreenshotResult | undefined> {
+  const options = sessionScreenshotOptions(input);
+  if (!options) return undefined;
+  try {
+    return await captureScreenshot(page, safeUrl, options);
+  } catch {
+    return undefined;
+  }
 }
 
 export async function closeSessionNow(session: SessionRecord, reason: string): Promise<boolean> {
@@ -187,14 +205,22 @@ export async function handleSessionStart(input: SessionStartToolInput) {
     const waitStrategy = effectiveInput.waitStrategy ?? DEFAULT_WAIT_STRATEGY;
     const headlessMode = defaultHeadlessMode(effectiveInput.headless);
 
-    browser = await launchCamoufoxBrowser(buildCamoufoxOptions(effectiveInput, selectedOS, headlessMode));
+    const id = `sess_${randomUUID()}`;
+    const profilePath = join(PROFILE_DIR, id);
+    mkdirSync(profilePath, { recursive: true });
+
+    const baseOptions = buildCamoufoxOptions(effectiveInput, selectedOS, headlessMode);
+    const context = await launchPersistentCamoufox({ ...baseOptions, user_data_dir: profilePath });
+    browser = context.browser() ?? undefined;
+    if (!browser) {
+      await context.close();
+      throw new Error("Persistent context did not expose a browser instance.");
+    }
     trackBrowser(browser);
-    const context = await browser.newContext(browserContextOptions(effectiveInput));
     const requestGuard = await installRequestGuard(context);
     const page = await context.newPage();
     requestGuard.watchPage(page);
 
-    const id = `sess_${randomUUID()}`;
     const rawUrls = [getProxyServer(effectiveInput.proxy)].filter((rawUrl): rawUrl is string => Boolean(rawUrl));
     const secrets = getProxySecrets(effectiveInput.proxy);
     const now = Date.now();
@@ -297,7 +323,8 @@ export async function buildSessionSnapshotResult(
     captchaPolicy,
     redactUrl(session.page.url()),
   );
-  return buildSuccessContent(mergedPayload, captchaScreenshot);
+  const screenshot = (await captureSessionScreenshot(session.page, redactUrl(session.page.url()), input)) ?? captchaScreenshot;
+  return buildSuccessContent(mergedPayload, screenshot);
 }
 
 export async function handleSessionNavigate(input: SessionNavigateToolInput) {
@@ -317,7 +344,8 @@ export async function handleSessionNavigate(input: SessionNavigateToolInput) {
       const basePayload = { sessionId: currentSession.id, expiresAt: sessionExpiresAt(currentSession), ...payload };
       const captchaPolicy = effectiveCaptchaPolicy(currentSession, input);
       const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(currentSession.page, response, basePayload, captchaPolicy, redactUrl(input.url));
-      return buildSuccessContent(mergedPayload, captchaScreenshot);
+      const screenshot = (await captureSessionScreenshot(currentSession.page, redactUrl(input.url), input)) ?? captchaScreenshot;
+      return buildSuccessContent(mergedPayload, screenshot);
     });
   } catch (error) {
     return buildToolError(`Failed to navigate session. Error: ${sessionSanitizedError(error, session, [input.url])}`);
@@ -346,7 +374,8 @@ export async function handleSessionAction(input: SessionActionToolInput) {
       const basePayload = { sessionId: currentSession.id, expiresAt: sessionExpiresAt(currentSession), action: actionResult, snapshot };
       const captchaPolicy = effectiveCaptchaPolicy(currentSession, input);
       const { mergedPayload, captchaScreenshot } = await maybeDetectCaptcha(currentSession.page, currentSession.lastNavigationResponse, basePayload, captchaPolicy, redactUrl(currentSession.page.url()));
-      return buildSuccessContent(mergedPayload, captchaScreenshot);
+      const screenshot = (await captureSessionScreenshot(currentSession.page, redactUrl(currentSession.page.url()), input)) ?? captchaScreenshot;
+      return buildSuccessContent(mergedPayload, screenshot);
     });
   } catch (error) {
     return buildToolError(`Failed to run session action. Error: ${sessionSanitizedError(error, session)}`);

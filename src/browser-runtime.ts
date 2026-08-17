@@ -107,6 +107,29 @@ export async function launchCamoufoxBrowser(options: CamoufoxOptions): Promise<B
   }
 }
 
+export async function launchPersistentCamoufox(options: CamoufoxOptions): Promise<BrowserContext> {
+  if (!options.user_data_dir) {
+    throw new Error("user_data_dir is required for persistent launch");
+  }
+  let timedOut = false;
+  const launchPromise = Camoufox<string, BrowserContext>(options as LaunchOptions & { user_data_dir: string });
+  launchPromise.then(
+    (context) => {
+      if (timedOut) {
+        void context.close().catch(() => undefined);
+      }
+    },
+    () => undefined,
+  );
+
+  try {
+    return await withTimeout(launchPromise, LAUNCH_TIMEOUT_MS, "Persistent browser launch");
+  } catch (error) {
+    timedOut = true;
+    throw error;
+  }
+}
+
 export async function installRequestGuard(context: BrowserContext): Promise<RequestGuard> {
   let inspectedRequests = 0;
   let blockedRequestError: Error | undefined;

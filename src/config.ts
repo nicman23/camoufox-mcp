@@ -1,4 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { NetworkSandboxMode, NetworkSecurityStatus, StealthProfile, SupportedOs, WaitStrategy } from "./types.js";
 
 export const SERVER_VERSION = "2.5.0";
@@ -88,6 +90,7 @@ export const MAX_DIAGNOSTIC_ENTRIES = readBoundedInteger("CAMOUFOX_MCP_MAX_DIAGN
 export const MAX_DIAGNOSTIC_TEXT_CHARS = readBoundedInteger("CAMOUFOX_MCP_MAX_DIAGNOSTIC_TEXT_CHARS", 2000, 100, 20000);
 export const MAX_SESSIONS = readBoundedInteger("CAMOUFOX_MCP_MAX_SESSIONS", 1, 1, 4);
 export const SESSION_TTL_MS = readBoundedInteger("CAMOUFOX_MCP_SESSION_TTL_MS", 600000, 300000, 900000);
+export const PROFILE_DIR = process.env.CAMOUFOX_MCP_PROFILE_DIR || join(homedir(), ".camoufox-mcp", "profiles");
 
 export function fileContains(path: string, value: string): boolean {
   try {

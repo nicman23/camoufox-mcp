@@ -9,7 +9,7 @@ export type ClickMode = "dom" | "pointer" | "auto";
 export type StealthProfile = "normal" | "privacy" | "human_assisted" | "fast" | "debug";
 export type WindowSize = [number, number];
 export type SlotRelease = () => void;
-export type ProxyConfig = string | { server: string; username?: string; password?: string };
+export type ProxyConfig = string;
 
 export interface RequestGuard {
   assertAllowed(): void;
@@ -63,6 +63,7 @@ export interface CamoufoxOptions {
   exclude_addons?: string[];
   window?: WindowSize;
   args?: string[];
+  user_data_dir?: string;
 }
 
 export interface BrowserLaunchInput {
@@ -75,9 +76,9 @@ export interface BrowserLaunchInput {
   block_webrtc?: boolean;
   proxy?: ProxyConfig;
   enable_cache?: boolean;
-  firefox_user_prefs?: Record<string, unknown>;
+  firefox_user_prefs?: string;
   exclude_addons?: string[];
-  window?: WindowSize;
+  window?: string;
   args?: string[];
   block_images?: boolean;
   block_webgl?: boolean;
