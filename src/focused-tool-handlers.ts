@@ -151,7 +151,7 @@ export async function handleScreenshot(input: ScreenshotToolInput) {
   // applyStealthProfile is applied once inside runBrowserOperation.
   const safeUrl = redactUrl(input.url);
 
-  if (!isScreenshotDimensionAllowed(input.viewport, input.window)) {
+  if (!isScreenshotDimensionAllowed(input.viewport)) {
     return buildToolError(`Screenshot dimensions exceed server policy (${MAX_SCREENSHOT_WIDTH}x${MAX_SCREENSHOT_HEIGHT}).`);
   }
 

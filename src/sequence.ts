@@ -1,17 +1,67 @@
 import type { Locator, Page } from "playwright-core";
 import chalk from "chalk";
-import { ALLOW_EVALUATE, DEFAULT_ACTION_TIMEOUT_MS, SEQUENCE_TIMEOUT_MS } from "./config.js";
+import { ALLOW_EVALUATE, DEFAULT_ACTION_TIMEOUT_MS, DEFAULT_MAX_CHARS, SEQUENCE_TIMEOUT_MS } from "./config.js";
 import type { SequenceAction } from "./schemas.js";
 import type { ClickMode, RequestGuard, SequenceActionResult } from "./types.js";
 import { describeError, serializeBounded, withTimeout } from "./utils.js";
 import { settleAndAssertSafe } from "./browser-runtime.js";
 
-export function actionTimeout(action: { timeout?: number }): number {
-  return action.timeout ?? DEFAULT_ACTION_TIMEOUT_MS;
+interface ParsedAction {
+  type: string;
+  selector?: string;
+  value?: string;
+  text?: string;
+  key?: string;
+  expression?: string;
+  delay?: number;
+  state?: string;
+  loadState?: string;
+  clickMode?: ClickMode;
+  deltaX?: number;
+  deltaY?: number;
+  maxChars?: number;
+}
+
+function parseAction(raw: SequenceAction): ParsedAction {
+  const parsed: ParsedAction = { type: raw.action };
+  if (raw.selector) parsed.selector = raw.selector;
+
+  switch (raw.action) {
+    case "fill":
+    case "select":
+      parsed.value = raw.value;
+      break;
+    case "type":
+      parsed.text = raw.value;
+      parsed.delay = raw.option ? Number(raw.option) : 0;
+      break;
+    case "press":
+      parsed.key = raw.value;
+      break;
+    case "evaluate":
+      parsed.expression = raw.value;
+      parsed.maxChars = raw.option ? Number(raw.option) : DEFAULT_MAX_CHARS;
+      break;
+    case "click":
+      parsed.clickMode = (raw.option as ClickMode) || "dom";
+      break;
+    case "waitFor":
+      if (raw.selector) {
+        parsed.state = raw.option || "visible";
+      } else {
+        parsed.loadState = raw.option || "load";
+      }
+      break;
+    case "scroll":
+      parsed.deltaX = raw.dx ? Number(raw.dx) : 0;
+      parsed.deltaY = raw.dy ? Number(raw.dy) : 600;
+      break;
+  }
+  return parsed;
 }
 
 export function sequenceTimeoutBudget(actions: SequenceAction[]): number {
-  return actions.reduce((total, action) => total + actionTimeout(action), 0);
+  return actions.length * DEFAULT_ACTION_TIMEOUT_MS;
 }
 
 export function isLocalOperationTimeout(error: unknown): boolean {
@@ -76,61 +126,60 @@ export async function activateElement(page: Page, selector: string, timeout: num
 
 export async function runSequenceAction(
   page: Page,
-  action: SequenceAction,
+  rawAction: SequenceAction,
   index: number,
   rawUrls: string[],
   secrets: string[],
 ): Promise<SequenceActionResult> {
+  const action = parseAction(rawAction);
   const started = Date.now();
-  const timeout = actionTimeout(action);
+  const timeout = DEFAULT_ACTION_TIMEOUT_MS;
 
   switch (action.type) {
     case "click":
-      await activateElement(page, action.selector, timeout, action.frame, action.clickMode);
+      await activateElement(page, action.selector!, timeout, undefined, action.clickMode);
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
 
     case "hover":
-      await resolveLocator(page, action.selector, action.frame).hover({ timeout });
+      await resolveLocator(page, action.selector!).hover({ timeout });
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
 
     case "fill":
-      await resolveLocator(page, action.selector, action.frame).fill(action.value, { timeout });
+      await resolveLocator(page, action.selector!).fill(action.value!, { timeout });
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
 
     case "type":
-      await resolveLocator(page, action.selector, action.frame).pressSequentially(action.text, {
-        delay: action.delay,
+      await resolveLocator(page, action.selector!).pressSequentially(action.text!, {
+        delay: action.delay ?? 0,
         timeout,
       });
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
 
     case "select":
-      await resolveLocator(page, action.selector, action.frame).selectOption(action.value, { timeout });
+      await resolveLocator(page, action.selector!).selectOption(action.value!, { timeout });
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
 
     case "press":
       if (action.selector) {
-        await resolveLocator(page, action.selector, action.frame).press(action.key, { timeout });
+        await resolveLocator(page, action.selector).press(action.key!, { timeout });
       } else {
-        await withTimeout(page.keyboard.press(action.key), timeout, "Press action");
+        await withTimeout(page.keyboard.press(action.key!), timeout, "Press action");
       }
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
 
     case "waitFor":
       if (action.selector) {
-        if (action.frame) {
-          await resolveLocator(page, action.selector, action.frame).waitFor({ state: action.state, timeout });
-        } else {
-          await page.waitForSelector(action.selector, { state: action.state, timeout });
-        }
+        await page.waitForSelector(action.selector, { state: (action.state ?? "visible") as "visible" | "hidden" | "attached" | "detached", timeout });
       } else {
-        await page.waitForLoadState(action.loadState ?? "load", { timeout });
+        await page.waitForLoadState((action.loadState ?? "load") as "domcontentloaded" | "load" | "networkidle", { timeout });
       }
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
 
-    case "scroll":
+    case "scroll": {
+      const deltaX = action.deltaX ?? 0;
+      const deltaY = action.deltaY ?? 600;
       if (action.selector) {
-        const locator = resolveLocator(page, action.selector, action.frame);
+        const locator = resolveLocator(page, action.selector);
         await locator.waitFor({ state: "attached", timeout });
         await withTimeout(
           locator.evaluate(async (element: HTMLElement, { deltaX, deltaY }: { deltaX: number; deltaY: number }) => {
@@ -154,14 +203,15 @@ export async function runSequenceAction(
             if (!scrollEventFired && (target.scrollLeft !== beforeLeft || target.scrollTop !== beforeTop)) {
               target.dispatchEvent(new Event("scroll", { bubbles: true }));
             }
-          }, { deltaX: action.deltaX, deltaY: action.deltaY }),
+          }, { deltaX, deltaY }),
           timeout,
           "Scroll action",
         );
       } else {
-        await page.mouse.wheel(action.deltaX, action.deltaY);
+        await page.mouse.wheel(deltaX, deltaY);
       }
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
+    }
 
     case "evaluate": {
       if (!ALLOW_EVALUATE) {
@@ -169,11 +219,11 @@ export async function runSequenceAction(
       }
 
       const result = await withTimeout(
-        page.evaluate((expression) => globalThis.eval(expression), action.expression),
+        page.evaluate((expression) => globalThis.eval(expression), action.expression!),
         timeout,
         "Evaluate action",
       );
-      const serialized = serializeBounded(result, action.maxChars, rawUrls, secrets);
+      const serialized = serializeBounded(result, action.maxChars ?? DEFAULT_MAX_CHARS, rawUrls, secrets);
       return {
         index,
         type: action.type,
@@ -183,6 +233,9 @@ export async function runSequenceAction(
         durationMs: Date.now() - started,
       };
     }
+
+    default:
+      throw new Error(`Unknown action type: ${action.type}`);
   }
 }
 

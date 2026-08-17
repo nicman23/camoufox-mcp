@@ -41,19 +41,11 @@ export function redactUrl(raw: string): string {
 }
 
 export function getProxyServer(proxy?: ProxyConfig): string | undefined {
-  if (!proxy) {
-    return undefined;
-  }
-
-  return typeof proxy === "string" ? proxy : proxy.server;
+  return proxy || undefined;
 }
 
-export function getProxySecrets(proxy?: ProxyConfig): string[] {
-  if (!proxy || typeof proxy === "string") {
-    return [];
-  }
-
-  return [proxy.username, proxy.password].filter((secret): secret is string => Boolean(secret));
+export function getProxySecrets(_proxy?: ProxyConfig): string[] {
+  return [];
 }
 
 export function sanitizeErrorMessage(message: string, rawUrls: string[], secrets: string[] = []): string {

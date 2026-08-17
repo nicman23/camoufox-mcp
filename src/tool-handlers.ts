@@ -86,12 +86,17 @@ export async function handleStatus() {
   return buildSuccessContent(buildStatusPayload());
 }
 
+function buildScreenshotOptions(input: { screenshotFullPage?: boolean; screenshotType?: "png" | "jpeg"; screenshotQuality?: number; selector?: string }) {
+  if (!input.screenshotFullPage && !input.screenshotType && !input.screenshotQuality && !input.selector) return undefined;
+  return { fullPage: input.screenshotFullPage, type: input.screenshotType, quality: input.screenshotQuality, selector: input.selector };
+}
+
 export async function handleBrowse(input: BrowseToolInput) {
   // applyStealthProfile is applied once inside runBrowserOperation; reading the
   // raw input here keeps redactUrl/screenshot checks on caller-supplied values.
   const safeUrl = redactUrl(input.url);
 
-  if (input.screenshot && !isScreenshotDimensionAllowed(input.viewport, input.window)) {
+  if (input.screenshot && !isScreenshotDimensionAllowed(input.viewport)) {
     return buildToolError(`Screenshot dimensions exceed server policy (${MAX_SCREENSHOT_WIDTH}x${MAX_SCREENSHOT_HEIGHT}).`);
   }
 
@@ -120,7 +125,7 @@ export async function handleBrowse(input: BrowseToolInput) {
 
       let screenshotResult: ScreenshotResult | undefined;
       if (input.screenshot) {
-        screenshotResult = await captureScreenshot(page, safeUrl, input.screenshotOptions);
+        screenshotResult = await captureScreenshot(page, safeUrl, buildScreenshotOptions(input));
         payload.screenshot = screenshotResult.screenshotMetadata;
       }
       requestGuard.assertAllowed();
@@ -192,7 +197,7 @@ export async function handleSequence(input: SequenceToolInput) {
   // applyStealthProfile is applied once inside runBrowserOperation.
   const safeUrl = redactUrl(input.url);
 
-  if (input.screenshot && !isScreenshotDimensionAllowed(input.viewport, input.window)) {
+  if (input.screenshot && !isScreenshotDimensionAllowed(input.viewport)) {
     return buildToolError(`Screenshot dimensions exceed server policy (${MAX_SCREENSHOT_WIDTH}x${MAX_SCREENSHOT_HEIGHT}).`);
   }
 
@@ -259,7 +264,7 @@ export async function handleSequence(input: SequenceToolInput) {
 
       let screenshotResult: ScreenshotResult | undefined;
       if (input.screenshot) {
-        screenshotResult = await captureScreenshot(page, safeUrl, input.screenshotOptions);
+        screenshotResult = await captureScreenshot(page, safeUrl, buildScreenshotOptions(input));
         payload.screenshot = screenshotResult.screenshotMetadata;
       }
       requestGuard.assertAllowed();

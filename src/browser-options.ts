@@ -21,10 +21,12 @@ export async function validateProxyConfig(proxy?: ProxyConfig): Promise<void> {
 export async function validateBrowserOptionsInput(input: BrowserLaunchInput): Promise<void> {
   await validateProxyConfig(input.proxy);
 
-  if (!ALLOW_UNSAFE_OPTIONS && hasUnsafeBrowserOptions(input.args, input.firefox_user_prefs, input.exclude_addons)) {
+  const prefs = input.firefox_user_prefs ? safeParseJson(input.firefox_user_prefs) : undefined;
+
+  if (!ALLOW_UNSAFE_OPTIONS && hasUnsafeBrowserOptions(input.args, prefs, input.exclude_addons)) {
     const requestedOptions = [
       input.args?.length ? "args" : undefined,
-      Object.keys(input.firefox_user_prefs ?? {}).length > 0 ? "firefox_user_prefs" : undefined,
+      Object.keys(prefs ?? {}).length > 0 ? "firefox_user_prefs" : undefined,
       input.exclude_addons?.length ? "exclude_addons" : undefined,
     ].filter((option): option is string => option !== undefined);
     console.error(chalk.yellow(
@@ -35,9 +37,18 @@ export async function validateBrowserOptionsInput(input: BrowserLaunchInput): Pr
     );
   }
 
-  const deniedUnsafeOption = findDeniedUnsafeBrowserOption(input.args, input.firefox_user_prefs);
+  const deniedUnsafeOption = findDeniedUnsafeBrowserOption(input.args, prefs);
   if (deniedUnsafeOption) {
     throw new Error(`Unsafe browser option is denied by server policy: ${deniedUnsafeOption}.`);
+  }
+}
+
+function safeParseJson(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === "object" && parsed !== null ? parsed : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -110,6 +121,22 @@ export async function validateCommonBrowserInput(input: CommonBrowserInput): Pro
   return targetUrl;
 }
 
+function parseWindowSize(value?: string): [number, number] | undefined {
+  if (!value) return undefined;
+  const match = value.match(/^(\d+)x(\d+)$/);
+  if (!match) return undefined;
+  return [Number(match[1]), Number(match[2])];
+}
+
+function parseFirefoxUserPrefs(value?: string): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
 export function buildCamoufoxOptions(input: BrowserLaunchInput, selectedOS: SupportedOs, headlessMode: HeadlessMode): CamoufoxOptions {
   return {
     os: [selectedOS],
@@ -128,9 +155,9 @@ export function buildCamoufoxOptions(input: BrowserLaunchInput, selectedOS: Supp
     } : undefined,
     proxy: input.proxy,
     enable_cache: input.enable_cache,
-    firefox_user_prefs: input.firefox_user_prefs,
+    firefox_user_prefs: parseFirefoxUserPrefs(input.firefox_user_prefs),
     exclude_addons: input.exclude_addons,
-    window: input.window,
+    window: parseWindowSize(input.window),
     args: input.args,
   };
 }

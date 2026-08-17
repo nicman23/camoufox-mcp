@@ -38,6 +38,13 @@ const server = new McpServer(
 const readOnlyOpenWorld: ToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 const nonReadOnlyOpenWorld: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 
+const toolFilter: Set<string> | null = process.env.CAMOUFOX_MCP_TOOLS
+  ? new Set(process.env.CAMOUFOX_MCP_TOOLS.split(",").map(s => s.trim()).filter(Boolean))
+  : null;
+function toolEnabled(name: string): boolean {
+  return toolFilter === null || toolFilter.has(name);
+}
+
 // Register a JSON tool with a raw-shape input schema and an optional output
 // schema. The MCP SDK's registerTool accepts both raw shapes (ZodRawShapeCompat)
 // and constructed schemas (AnySchema, e.g. z.object(...)) for inputSchema and
@@ -53,6 +60,7 @@ function registerJsonTool<InputArgs extends z.ZodRawShape>(
   handler: (input: z.infer<z.ZodObject<InputArgs>>) => Promise<CallToolResult>,
   outputSchema: z.ZodTypeAny = anyOutputSchema,
 ): void {
+  if (!toolEnabled(name)) return;
   const callback: ToolCallback<InputArgs> = ((input: unknown) =>
     handler(input as z.infer<z.ZodObject<InputArgs>>)) as ToolCallback<InputArgs>;
   server.registerTool(
@@ -62,16 +70,18 @@ function registerJsonTool<InputArgs extends z.ZodRawShape>(
   );
 }
 
-server.registerTool(
-  "camoufox_status",
-  {
-    description: "Return server, browser, queue, session, and policy status without launching a page.",
-    inputSchema: {},
-    outputSchema: statusOutputSchema,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  async () => handleStatus(),
-);
+if (toolEnabled("camoufox_status")) {
+  server.registerTool(
+    "camoufox_status",
+    {
+      description: "Return server, browser, queue, session, and policy status without launching a page.",
+      inputSchema: {},
+      outputSchema: statusOutputSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async () => handleStatus(),
+  );
+}
 
 registerJsonTool("browse", "Navigate once and return bounded page content.", browseToolShape, readOnlyOpenWorld, async (input) => handleBrowse(input as BrowseToolInput), browseOutputSchema);
 registerJsonTool("browse_snapshot", "Navigate once and return visible text, ARIA snapshot, and interactive metadata.", snapshotToolShape, readOnlyOpenWorld, async (input) => handleSnapshot(input as SnapshotToolInput), snapshotOutputSchema);

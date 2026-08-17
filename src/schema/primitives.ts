@@ -6,46 +6,8 @@ export const viewportSchema = z.object({
   height: z.number().min(240).max(2160).default(1080),
 }).optional().describe("Custom viewport dimensions.");
 
-export const proxySchema = z.union([
-  z.string().describe("Proxy URL (e.g., 'http://proxy.example.com:8080')"),
-  z.object({
-    server: z.string().describe("Proxy server URL"),
-    username: z.string().optional().describe("Proxy username for authentication"),
-    password: z.string().optional().describe("Proxy password for authentication"),
-  }),
-]).optional().describe("Proxy configuration for routing browser traffic through an HTTP(S) proxy. Proxy servers are checked against the same local-network URL policy as page requests.");
+export const proxySchema = z.string().optional().describe("Proxy URL (e.g., 'http://user:pass@proxy.example.com:8080'). Checked against the same local-network URL policy as page requests.");
 
-export const windowSchema = z.preprocess(
-  (arg) => {
-    if (Array.isArray(arg) && arg.length === 0) {
-      return undefined;
-    }
-    return arg;
-  },
-  z.array(z.number()).length(2).superRefine(([width, height], ctx) => {
-    if (width < 320 || width > 3840) {
-      ctx.addIssue({
-        code: "custom",
-        path: [0],
-        message: "Window width must be between 320 and 3840.",
-      });
-    }
-    if (height < 240 || height > 2160) {
-      ctx.addIssue({
-        code: "custom",
-        path: [1],
-        message: "Window height must be between 240 and 2160.",
-      });
-    }
-  }).optional(),
-).describe("Set fixed window size [width, height] instead of random generation. An empty array [] is accepted and treated as if the window parameter was not specified.");
-
-export const screenshotOptionsSchema = z.object({
-  fullPage: z.boolean().optional().default(false).describe("Capture the full page instead of only the viewport. Byte and viewport/window limits still apply."),
-  selector: z.string().max(2000).optional().describe("Optional CSS selector for element-only screenshots."),
-  type: z.enum(["png", "jpeg"]).optional().default("png").describe("Screenshot image type."),
-  quality: z.number().int().min(1).max(100).optional().describe("JPEG quality from 1-100. Ignored for PNG."),
-}).optional().describe("Optional screenshot capture settings. Used only when screenshot is true.");
 
 export const stealthProfileSchema = z.enum(["normal", "privacy", "human_assisted", "fast", "debug"]).optional().default(DEFAULT_STEALTH_PROFILE)
   .describe("Convenience profile for common Camoufox browser settings. Explicit options override profile values.");
