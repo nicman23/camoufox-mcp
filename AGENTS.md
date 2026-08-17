@@ -90,6 +90,40 @@ Publish by rerunning the same `clawhub package publish` command without `--dry-r
   - macOS: `rm -rf ~/Library/Caches/camoufox/Camoufox.app ~/Library/Caches/camoufox/version.json && npx -y camoufox-js@0.12.0 fetch`
   - Linux/Docker: `rm -rf ~/.cache/camoufox && npx -y camoufox-js@0.12.0 fetch`
 
+### Checking for Camoufox Updates
+
+Run periodically (or when anti-bot behavior changes on target sites):
+
+```bash
+# 1. Check for new camoufox-js npm releases (drives binary + API)
+npm view camoufox-js version
+npm view camoufox-js time --json | tail -5
+
+# 2. Check upstream browser builds (new Firefox base, anti-bot fixes)
+#    https://github.com/daijro/camoufox/releases
+
+# 3. Check playwright-core (but DO NOT bump past 1.59.0 without re-testing)
+npm view playwright-core version
+
+# 4. Verify the locally installed binary matches expectations
+npm run doctor
+```
+
+**Upgrade procedure when a new `camoufox-js` is available:**
+
+1. Read the changelog / release notes for breaking changes or new `playwright-core` compatibility.
+2. Wipe the browser cache:
+   - Linux: `rm -rf ~/.cache/camoufox`
+   - macOS: `rm -rf ~/Library/Caches/camoufox/Camoufox.app ~/Library/Caches/camoufox/version.json`
+3. Fetch the new binary: `npx -y camoufox-js@<new-version> fetch`
+4. Bump `camoufox-js` in `package.json` (both `dependencies` and `overrides` if present).
+5. If the new `camoufox-js` supports a newer `playwright-core`, bump that too — but always run the full test suite after.
+6. Update the `EXPECTED` const in `scripts/doctor.mjs`.
+7. Update the "Verified-good triple" line in this file.
+8. Run `npm run test:all`. If it passes, commit. If not, revert the pin.
+
+**Do NOT bump `playwright-core` independently of `camoufox-js`.** The Juggler protocol is version-locked to the browser build.
+
 ## Release & Versioning
 
 Releases are tag-driven. `.github/workflows/ci.yml` runs tests on every push/PR; pushing a `v*` tag additionally publishes to NPM (Trusted Publishing / OIDC), builds and pushes Docker images (Docker Hub + GHCR), and creates a GitHub Release.
