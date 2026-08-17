@@ -46,9 +46,14 @@ export async function detectChallenge(page: Page, response?: Response | null, at
       const iframe = allIframes[i];
       const haystack = `${iframe.src} ${iframe.title}`.toLowerCase();
       if (/(captcha|recaptcha|hcaptcha|turnstile)/.test(haystack)) {
-        add("iframe:captcha");
-        if (collectIframeData) {
-          iframeInfo.push({ src: iframe.src, title: iframe.title, nth: i });
+        const rect = iframe.getBoundingClientRect();
+        const style = window.getComputedStyle(iframe);
+        const isVisible = rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        if (isVisible) {
+          add("iframe:captcha");
+          if (collectIframeData) {
+            iframeInfo.push({ src: iframe.src, title: iframe.title, nth: i });
+          }
         }
       }
     }
@@ -70,7 +75,8 @@ export async function detectChallenge(page: Page, response?: Response | null, at
       add("title:challenge");
     }
 
-    if (/cloudflare|cf-challenge|turnstile/.test(document.documentElement.innerHTML.toLowerCase())) {
+    // Only match actual challenge markup, not CDN/script references to "cloudflare".
+    if (document.querySelector("#challenge-stage, .cf-turnstile, #turnstile-wrapper, .challenge-platform, #challenge-running")) {
       add("markup:challenge-provider");
     }
 
@@ -198,7 +204,20 @@ export async function maybeDetectCaptcha<T extends object>(
     return { mergedPayload: payload as T & CaptchaDetection };
   }
   const attemptMode = captchaPolicy === "attempt";
-  const detection = await detectChallenge(page, response, attemptMode);
+  let detection = await detectChallenge(page, response, attemptMode);
+
+  // Transient challenge pages (Cloudflare interstitial, JS challenge) often
+  // resolve on their own within a few seconds. Wait and re-check once before
+  // surfacing a false positive to the caller.
+  if (detection.captchaDetected) {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const retryDetection = await detectChallenge(page, response, attemptMode);
+    if (!retryDetection.captchaDetected) {
+      return { mergedPayload: payload as T & CaptchaDetection };
+    }
+    detection = retryDetection;
+  }
+
   const mergedPayload = applyCaptchaPolicy(payload, detection, captchaPolicy);
   const captchaScreenshot = attemptMode && detection.captchaDetected
     ? await captureCaptchaScreenshot(page, safeUrl)
