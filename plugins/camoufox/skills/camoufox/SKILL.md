@@ -139,16 +139,16 @@ Navigate, act, read once (no session needed):
 {
   "url": "https://example.com/login",
   "actions": [
-    { "type": "fill", "selector": "#user", "value": "alice" },
-    { "type": "fill", "selector": "#pass", "value": "secret" },
-    { "type": "click", "selector": "button[type=submit]" },
-    { "type": "waitFor", "loadState": "domcontentloaded" }
+    { "action": "fill", "selector": "#user", "value": "alice" },
+    { "action": "fill", "selector": "#pass", "value": "secret" },
+    { "action": "click", "selector": "button[type=submit]" },
+    { "action": "waitFor", "option": "domcontentloaded" }
   ],
   "maxChars": 8000
 }
 ```
 
-Screenshot:
+Screenshot (JPEG q80 by default; use `"screenshotType": "png"` for lossless):
 
 ```json
 { "url": "https://example.com", "screenshot": true }
@@ -156,46 +156,74 @@ Screenshot:
 
 ## Sequence Actions
 
-`browse_sequence` (one round trip) and `browse_session_action` (one action in a live session) both take the same action objects. Available types: `click`, `hover`, `fill`, `type`, `select`, `press`, `waitFor`, `scroll`, `evaluate`.
+`browse_sequence` (one round trip) and `browse_session_action` (one action in a live session) both take the same flat 6-field action objects. All fields are optional strings except `action`:
 
-Read `references/sequence-actions.md` for every field, `clickMode` (DOM vs pointer), `frame` (acting inside an iframe), and `waitFor` states. Two things to remember up front:
+| Field | Purpose |
+| --- | --- |
+| `action` | Action type: `click`, `hover`, `fill`, `type`, `select`, `press`, `waitFor`, `scroll`, `evaluate` |
+| `selector` | CSS selector of the target element |
+| `value` | Primary value: text to fill/type, key to press, expression to evaluate, dropdown value |
+| `option` | Secondary: delay ms (type), state (waitFor), loadState (waitFor), clickMode (click), maxChars (evaluate) |
+| `dx` | Horizontal scroll pixels (scroll) |
+| `dy` | Vertical scroll pixels (scroll) |
 
-- Prefer `fill` for setting an input's value; use `type` only when you need real per-keystroke events (delays, key handlers).
+Two things to remember up front:
+
+- Prefer `fill` for setting an input's value; use `type` only when you need real per-keystroke events (set `option` to the delay in ms).
 - `evaluate` runs arbitrary JS and is disabled unless the operator sets `CAMOUFOX_MCP_ALLOW_EVALUATE=1` (check `evaluateAllowed` in status first).
 
 ## Interactive Sessions
 
 Use a session when you need the *same* page (cookies, login, scroll position, JS state) across several decisions you can't script up front — e.g. log in, look at the result, then decide where to go next. For a fixed known sequence, `browse_sequence` is cheaper because it's a single call.
 
-Sessions are short-lived and auto-expire after `sessionTtlMs`. Always close them when done so you don't hold a slot.
+### Persistent Profiles
 
-Lifecycle:
+Sessions use a persistent browser profile (`userDataDir`) so cookies, localStorage, and browser fingerprint survive across browser restarts and host restarts. Each session gets its own profile at `$CAMOUFOX_MCP_PROFILE_DIR/<sessionId>` (default: `~/.camoufox-mcp/profiles/`). This means:
 
-1. `browse_session_start` → returns a `sessionId`. Pass stealth/privacy options here; they apply for the session's life.
-2. `browse_session_navigate` → go to a URL in that session.
-3. `browse_session_action` → run one action (same action objects as sequences).
-4. `browse_session_snapshot` → read current visible text + interactive elements without acting.
+- Log in once → the fingerprint stays consistent → Cloudflare/anti-bot services recognize the returning visitor → fewer CAPTCHAs on subsequent visits.
+- The profile persists on disk after the session closes. Reuse the same session ID to pick up where you left off (or start a new session for a fresh identity).
+
+### TTL
+
+Sessions auto-expire after their TTL (sliding — every interaction resets the timer). Default is `sessionTtlMs` from server config (10 min). Override per-session with `ttlMs` on `browse_session_start` (30s to 24h):
+
+```json
+{ "ttlMs": 86400000 }  // 24-hour session
+```
+
+Always close sessions when done so you don't hold a browser slot.
+
+### Lifecycle
+
+1. `browse_session_start` → returns a `sessionId`. Pass stealth/privacy options here; they apply for the session's life. Accepts `ttlMs` for custom expiry.
+2. `browse_session_navigate` → go to a URL in that session. Supports `screenshot: true`.
+3. `browse_session_action` → run one action (same 6-field action objects as sequences). Supports `screenshot: true`.
+4. `browse_session_snapshot` → read current visible text + interactive elements without acting. Supports `screenshot: true`.
 5. `browse_session_resume` → after a paused CAPTCHA or human step, wait for load state and re-read.
-6. `browse_session_close` → free the slot.
+6. `browse_session_close` → free the slot (profile data persists on disk).
+
+### Screenshots on Session Tools
+
+All session tools accept `screenshot`, `screenshotFullPage`, `screenshotType`, `screenshotQuality`. Default format is **JPEG q80** (~3-5x smaller than PNG in context). Use `"screenshotType": "png"` for lossless quality when needed.
 
 Worked example — log in, then branch based on what you see:
 
 ```json
-// 1. start
-{}  // → { "sessionId": "abc123", ... }
+// 1. start (24h session for a persistent identity)
+{ "ttlMs": 86400000 }  // → { "sessionId": "abc123", ... }
 
-// 2. navigate (browse_session_navigate)
-{ "sessionId": "abc123", "url": "https://example.com/login" }
+// 2. navigate with screenshot (browse_session_navigate)
+{ "sessionId": "abc123", "url": "https://example.com/login", "screenshot": true }
 
 // 3. fill + submit (browse_session_action, one per call)
-{ "sessionId": "abc123", "action": { "type": "fill", "selector": "#user", "value": "alice" } }
-{ "sessionId": "abc123", "action": { "type": "fill", "selector": "#pass", "value": "secret" } }
-{ "sessionId": "abc123", "action": { "type": "click", "selector": "button[type=submit]" } }
+{ "sessionId": "abc123", "action": { "action": "fill", "selector": "#user", "value": "alice" } }
+{ "sessionId": "abc123", "action": { "action": "fill", "selector": "#pass", "value": "secret" } }
+{ "sessionId": "abc123", "action": { "action": "click", "selector": "button[type=submit]" } }
 
 // 4. read state and decide (browse_session_snapshot)
-{ "sessionId": "abc123", "maxElements": 60 }
+{ "sessionId": "abc123", "maxElements": 60, "screenshot": true }
 
-// 5. close (browse_session_close)
+// 5. close (browse_session_close) — profile persists on disk
 { "sessionId": "abc123" }
 ```
 
@@ -263,6 +291,24 @@ The server does not solve CAPTCHAs. It surfaces bounded challenge context for th
 - `attempt`: return enhanced metadata (provider, iframe hints, suggested strategy, bounded screenshot). Still no hidden bypass.
 
 `CAPTCHA_AUTONOMOUS=true` marks handling as LLM-assisted and may add provider playbooks, but the server still performs no covert bypass. Use `disable_coop: true` only when iframe interaction needs it.
+
+**False-positive mitigation:** The server waits 5 seconds and re-checks once before surfacing a challenge. Only visible iframes and specific challenge DOM elements (`#challenge-stage`, `.cf-turnstile`, etc.) trigger detection — hidden auth iframes and CDN script references no longer produce false positives.
+
+## Vision-Heavy Tasks: Use Subagents
+
+When a task requires inspecting screenshots to make decisions (solving a visual CAPTCHA, identifying and clicking a specific image, reading rendered text), **delegate to a subagent** rather than processing the image in the main conversation context.
+
+Each screenshot consumes significant context (~130K base64 chars even at JPEG q80). Vision-heavy workflows that take multiple screenshots quickly exhaust the main context window.
+
+**Pattern:**
+1. Main agent navigates and captures a screenshot (or uses `captchaPolicy: "attempt"`).
+2. Spawn a subagent: "Given this page state, identify the target element and return its CSS selector."
+3. Subagent inspects the image, returns a concise answer (selector or coordinates).
+4. Main agent executes the returned action via `browse_session_action`.
+
+**Delegate when:** solving visual CAPTCHAs, finding/clicking specific visual elements, verifying visual state, or any task requiring 2+ screenshot inspections.
+
+**Do NOT delegate:** simple text extraction (use `outputMode: "text"`), single confirmation screenshots.
 
 ## Debugging
 
