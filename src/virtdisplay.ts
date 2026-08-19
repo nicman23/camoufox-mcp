@@ -235,13 +235,16 @@ export function toXdotoolKeysym(key: string): string {
 // Sends a real X11 key event to the focused window on the given display via
 // xdotool. Used for bare keys (no selector) so the event behaves like physical
 // keyboard input to the browser window, rather than a CDP injection that only
-// reaches the page's currently-focused element.
+// reaches the page's currently-focused element. xdotool has no --display flag;
+// it connects to the display named by the DISPLAY env var, so we set that to
+// the session's Xephyr display for the subprocess.
 export function pressKeyOnDisplay(display: string, key: string): Promise<void> {
   const keysym = toXdotoolKeysym(key);
   return new Promise((resolve, reject) => {
     execFile(
       "xdotool",
-      ["--display", display, "key", "--clearmodifiers", keysym],
+      ["key", "--clearmodifiers", keysym],
+      { env: { ...process.env, DISPLAY: display } },
       (error, _stdout, stderr) => {
         if (error) {
           reject(new Error(`xdotool key "${keysym}" on ${display} failed: ${stderr.trim() || error.message}`));
