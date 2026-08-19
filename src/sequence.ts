@@ -5,6 +5,7 @@ import type { SequenceAction } from "./schemas.js";
 import type { ClickMode, RequestGuard, SequenceActionResult } from "./types.js";
 import { describeError, serializeBounded, withTimeout } from "./utils.js";
 import { settleAndAssertSafe } from "./browser-runtime.js";
+import { pressKeyOnDisplay } from "./virtdisplay.js";
 
 interface ParsedAction {
   type: string;
@@ -130,6 +131,7 @@ export async function runSequenceAction(
   index: number,
   rawUrls: string[],
   secrets: string[],
+  display?: string,
 ): Promise<SequenceActionResult> {
   const action = parseAction(rawAction);
   const started = Date.now();
@@ -162,7 +164,12 @@ export async function runSequenceAction(
     case "press":
       if (action.selector) {
         await resolveLocator(page, action.selector).press(action.key!, { timeout });
+      } else if (display) {
+        // Bare key on a session: send a real X11 key event to the browser
+        // window via xdotool on the session's Xephyr display.
+        await withTimeout(pressKeyOnDisplay(display, action.key!), timeout, "Press action");
       } else {
+        // One-shot (no Xephyr display): fall back to CDP key injection.
         await withTimeout(page.keyboard.press(action.key!), timeout, "Press action");
       }
       return { index, type: action.type, selector: action.selector, status: "ok", durationMs: Date.now() - started };
@@ -245,12 +252,13 @@ export async function runSequenceActionsWithBudget(
   actionsInput: SequenceAction[],
   rawUrls: string[],
   secrets: string[],
+  display?: string,
 ): Promise<SequenceActionResult[]> {
   const actions: SequenceActionResult[] = [];
 
   await withTimeout((async () => {
     for (let index = 0; index < actionsInput.length; index += 1) {
-      const result = await runSequenceAction(page, actionsInput[index], index, rawUrls, secrets);
+      const result = await runSequenceAction(page, actionsInput[index], index, rawUrls, secrets, display);
       actions.push(result);
       await settleAndAssertSafe(page, requestGuard);
     }

@@ -183,3 +183,72 @@ export async function launchXephyr(opts?: { width?: number; height?: number }): 
     },
   };
 }
+
+// Maps Playwright key names to X keysyms for xdotool. Letters, digits, and
+// F-keys pass through unchanged.
+const PLAYWRIGHT_TO_XDOTOOL: Record<string, string> = {
+  Enter: "Return",
+  Tab: "Tab",
+  Backspace: "BackSpace",
+  Delete: "Delete",
+  Insert: "Insert",
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  ArrowUp: "Up",
+  ArrowDown: "Down",
+  PageUp: "Page_Up",
+  PageDown: "Page_Down",
+  Home: "Home",
+  End: "End",
+  Space: "space",
+  Escape: "Escape",
+  Esc: "Escape",
+  Control: "Control_L",
+  ControlLeft: "Control_L",
+  ControlRight: "Control_R",
+  Shift: "Shift_L",
+  ShiftLeft: "Shift_L",
+  ShiftRight: "Shift_R",
+  Alt: "Alt_L",
+  AltLeft: "Alt_L",
+  AltRight: "Alt_R",
+  Meta: "Super_L",
+  Command: "Super_L",
+  Super: "Super_L",
+  Quote: "apostrophe",
+  Backquote: "grave",
+  Minus: "minus",
+  Equal: "equal",
+  Backslash: "backslash",
+  Comma: "comma",
+  Period: "period",
+  Slash: "slash",
+  Semicolon: "semicolon",
+  BracketLeft: "bracketleft",
+  BracketRight: "bracketright",
+};
+
+export function toXdotoolKeysym(key: string): string {
+  return PLAYWRIGHT_TO_XDOTOOL[key] ?? key;
+}
+
+// Sends a real X11 key event to the focused window on the given display via
+// xdotool. Used for bare keys (no selector) so the event behaves like physical
+// keyboard input to the browser window, rather than a CDP injection that only
+// reaches the page's currently-focused element.
+export function pressKeyOnDisplay(display: string, key: string): Promise<void> {
+  const keysym = toXdotoolKeysym(key);
+  return new Promise((resolve, reject) => {
+    execFile(
+      "xdotool",
+      ["--display", display, "key", "--clearmodifiers", keysym],
+      (error, _stdout, stderr) => {
+        if (error) {
+          reject(new Error(`xdotool key "${keysym}" on ${display} failed: ${stderr.trim() || error.message}`));
+          return;
+        }
+        resolve();
+      },
+    );
+  });
+}

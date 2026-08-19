@@ -389,7 +389,7 @@ export async function handleSessionAction(input: SessionActionToolInput) {
     const currentSession = await getSession(input.sessionId);
     session = currentSession;
     return await runSessionExclusive(currentSession, async () => {
-      const actionResult = await runSequenceAction(currentSession.page, input.action, 0, currentSession.rawUrls, currentSession.secrets);
+      const actionResult = await runSequenceAction(currentSession.page, input.action, 0, currentSession.rawUrls, currentSession.secrets, currentSession.xephyr?.display);
       await settleAndAssertSafe(currentSession.page, currentSession.requestGuard);
       const snapshot = await runGuardedPageRead(
         currentSession.page,
