@@ -16,10 +16,22 @@ const DISPLAY_MAX = 299;
 const READY_TIMEOUT_MS = 10000;
 const READY_POLL_MS = 100;
 
+// The host display captured at module load — before any browser launch can
+// mutate process.env.DISPLAY (camoufox-js does exactly that when it spawns
+// its own Xvfb). Xephyr must always attach to this display, whatever
+// process.env says later.
+const HOST_DISPLAY = process.env.DISPLAY;
+
 let xephyrAvailable: boolean | undefined;
 
 export async function isXephyrAvailable(): Promise<boolean> {
   if (xephyrAvailable !== undefined) return xephyrAvailable;
+  // Without a host display there is nothing for Xephyr to embed in — defer to
+  // camoufox-js's off-screen Xvfb instead.
+  if (!HOST_DISPLAY) {
+    xephyrAvailable = false;
+    return false;
+  }
   try {
     await access("/usr/bin/Xephyr");
     xephyrAvailable = true;
@@ -51,21 +63,54 @@ async function findFreeDisplay(): Promise<string> {
   throw new Error(`Could not find a free X display number in :${DISPLAY_MIN}-${DISPLAY_MAX}`);
 }
 
-function waitForDisplay(display: string, child: ChildProcess, timeoutMs: number): Promise<void> {
-  const started = Date.now();
+// Bounded tail of the child's stderr, so a failed launch reports WHY it died
+// (e.g. "cannot open display :0") instead of a bare exit notice.
+function createStderrTail(limit = 4000): { push: (chunk: Buffer) => void; value: () => string } {
+  let buffer = "";
+  return {
+    push: (chunk: Buffer) => {
+      buffer = (buffer + chunk.toString()).slice(-limit);
+    },
+    value: () => buffer.trim(),
+  };
+}
+
+function waitForDisplay(
+  display: string,
+  child: ChildProcess,
+  timeoutMs: number,
+  stderr: { value: () => string },
+): Promise<void> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (message: string): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(message));
+    };
+    const timer = setTimeout(() => {
+      fail(`Timed out waiting for Xephyr display ${display} to become ready`);
+    }, timeoutMs);
+
+    // Fail fast on spawn errors (e.g. ENOENT) — exitCode stays null in that case.
+    child.once("error", (error) => {
+      fail(`Xephyr spawn failed: ${error.message}`);
+    });
+
     const poll = (): void => {
+      if (settled) return;
       if (child.exitCode !== null || child.signalCode !== null) {
-        reject(new Error(`Xephyr exited before display ${display} became ready`));
+        const detail = stderr.value();
+        fail(`Xephyr exited before display ${display} became ready (code ${child.exitCode}, signal ${child.signalCode})${detail ? `: ${detail}` : ""}`);
         return;
       }
       execFile("xdpyinfo", ["-display", display], (error) => {
+        if (settled) return;
         if (!error) {
+          settled = true;
+          clearTimeout(timer);
           resolve();
-          return;
-        }
-        if (Date.now() - started > timeoutMs) {
-          reject(new Error(`Timed out waiting for Xephyr display ${display} to become ready`));
           return;
         }
         setTimeout(poll, READY_POLL_MS);
@@ -76,9 +121,13 @@ function waitForDisplay(display: string, child: ChildProcess, timeoutMs: number)
 }
 
 export async function launchXephyr(opts?: { width?: number; height?: number }): Promise<XephyrDisplay> {
+  if (!HOST_DISPLAY) {
+    throw new Error("No host display available; cannot launch Xephyr");
+  }
   const width = opts?.width ?? 1280;
   const height = opts?.height ?? 800;
   const display = await findFreeDisplay();
+  const stderr = createStderrTail();
 
   const child = spawn(
     "Xephyr",
@@ -92,11 +141,19 @@ export async function launchXephyr(opts?: { width?: number; height?: number }): 
       "+extension", "GLX",
       "-extension", "COMPOSITE",
     ],
-    { stdio: "ignore", detached: true },
+    // Pin DISPLAY to the host display captured at module load. process.env
+    // may have been mutated by earlier browser launches, so it cannot be
+    // trusted here.
+    { stdio: ["ignore", "ignore", "pipe"], detached: true, env: { ...process.env, DISPLAY: HOST_DISPLAY } },
   );
+  child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+  child.on("error", (error) => {
+    // spawn failure (e.g. ENOENT): surface it on the next poll via exit state.
+    stderr.push(Buffer.from(`spawn error: ${error.message}\n`));
+  });
 
   try {
-    await waitForDisplay(display, child, READY_TIMEOUT_MS);
+    await waitForDisplay(display, child, READY_TIMEOUT_MS, stderr);
   } catch (error) {
     child.kill("SIGKILL");
     throw error;

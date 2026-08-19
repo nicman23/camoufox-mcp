@@ -7,7 +7,8 @@ import { validateTargetUrl } from "./policy.js";
 import { DEFAULT_ACTION_TIMEOUT_MS, DEFAULT_MAX_CHARS, DEFAULT_MAX_ELEMENTS, DEFAULT_WAIT_STRATEGY, MAX_SESSIONS, PROFILE_DIR, SESSION_CLOSE_GRACE_MS, SESSION_TTL_MS } from "./config.js";
 import type { CaptchaPolicy, ScreenshotOptions, ScreenshotResult, SessionRecord, SlotRelease, WaitStrategy } from "./types.js";
 import type { SessionActionToolInput, SessionCloseToolInput, SessionNavigateToolInput, SessionResumeToolInput, SessionSnapshotToolInput, SessionStartToolInput } from "./schemas.js";
-import { acquireBrowserSlot, browserContextOptions, buildCamoufoxOptions, closeBrowser, installRequestGuard, launchCamoufoxBrowser, launchPersistentCamoufox, runGuardedPageRead, settleAndAssertSafe, trackBrowser, validateBrowserOptionsInput } from "./browser-runtime.js";
+import { acquireBrowserSlot, buildCamoufoxOptions, closeBrowser, installRequestGuard, launchPersistentCamoufox, runGuardedPageRead, settleAndAssertSafe, trackBrowser, validateBrowserOptionsInput } from "./browser-runtime.js";
+import { isXephyrAvailable, launchXephyr, type XephyrDisplay } from "./virtdisplay.js";
 import { createDiagnosticsCollector } from "./diagnostics.js";
 import { buildBrowsePayload, buildSnapshotPayload } from "./extractors.js";
 import { maybeDetectCaptcha } from "./captcha.js";
@@ -74,6 +75,11 @@ export async function closeSessionNow(session: SessionRecord, reason: string): P
   try {
     await closeBrowser(session.browser);
   } finally {
+    // Tear down the session's own Xephyr display. close is idempotent, so this
+    // is safe even if the browser close already dropped the last client.
+    if (session.xephyr) {
+      await session.xephyr.close();
+    }
     session.releaseSlot();
     releaseSessionSlot();
   }
@@ -198,6 +204,7 @@ export async function handleSessionStart(input: SessionStartToolInput) {
 
   let release: SlotRelease | undefined;
   let browser: Browser | undefined;
+  let xephyr: XephyrDisplay | undefined;
   try {
     await validateBrowserOptionsInput(effectiveInput);
     release = await acquireBrowserSlot();
@@ -210,6 +217,21 @@ export async function handleSessionStart(input: SessionStartToolInput) {
     mkdirSync(profilePath, { recursive: true });
 
     const baseOptions = buildCamoufoxOptions(effectiveInput, selectedOS, headlessMode);
+
+    // On Linux "virtual" mode, own an isolated Xephyr display for the session so
+    // the browser never attaches to the ambient DISPLAY or another project's X
+    // server. The display is launched here (session start) and torn down in
+    // closeSessionNow. The browser is pointed at it via an explicit env so it
+    // reliably inherits DISPLAY — we do NOT rely on camoufox-js mutating the
+    // shared process.env, which is racy across concurrent launches.
+    if (headlessMode === "virtual" && (await isXephyrAvailable())) {
+      xephyr = await launchXephyr();
+      baseOptions.headless = false;
+      baseOptions.virtual_display = xephyr.display;
+      baseOptions.env = { ...process.env, DISPLAY: xephyr.display };
+      console.error(chalk.blue(`[Camoufox] Session ${id} using own Xephyr display ${xephyr.display} (pid ${xephyr.pid}).`));
+    }
+
     const context = await launchPersistentCamoufox({ ...baseOptions, user_data_dir: profilePath });
     browser = context.browser() ?? undefined;
     if (!browser) {
@@ -248,11 +270,15 @@ export async function handleSessionStart(input: SessionStartToolInput) {
       op: Promise.resolve(),
       closing: false,
       closed: false,
+      xephyr,
     };
 
     sessions.set(id, session);
+    // Ownership of the Xephyr display transfers to the session record; clear the
+    // local handles so the catch block below doesn't double-close them.
     browser = undefined;
     release = undefined;
+    xephyr = undefined;
 
     return buildSuccessContent({
       sessionId: id,
@@ -264,6 +290,9 @@ export async function handleSessionStart(input: SessionStartToolInput) {
       captchaPolicy,
     });
   } catch (error) {
+    if (xephyr) {
+      await xephyr.close();
+    }
     if (browser) {
       await closeBrowser(browser);
     }

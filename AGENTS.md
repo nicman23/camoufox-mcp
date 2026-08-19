@@ -161,9 +161,9 @@ The main MCP server implementation:
 - Supports OS spoofing (Windows 11, macOS, Linux) with automatic rotation
 - Implements configurable headless modes:
   - Standard headless (`true`) — no display at all
-  - Virtual display (`"virtual"`) — **camoufox-mcp launches its own Xephyr** on a random, verified-free display number (range `:200`–`:299`, see `src/virtdisplay.ts`). This isolates the browser from the ambient `DISPLAY` and from other projects' X servers. The display is torn down when the browser closes. Falls back to camoufox-js's built-in Xvfb when the `Xephyr` binary is unavailable (e.g. minimal containers).
+  - Virtual display (`"virtual"`) — isolates the browser from the ambient `DISPLAY` and from other projects' X servers. **Sessions** launch their own Xephyr on a random, verified-free display number (range `:200`–`:299`, see `src/virtdisplay.ts`) at session start, point the browser at it via an explicit `env.DISPLAY` (not a `process.env` mutation), and tear it down when the session closes — the display lifetime matches the session. **One-shot tools** (`browse`, `browse_sequence`) defer to camoufox-js's built-in off-screen Xvfb. Falls back to camoufox-js's Xvfb when the `Xephyr` binary is unavailable (e.g. minimal containers).
   - Visible (`false`) — renders on the ambient display, for debugging
-  - Default: `"virtual"` on Linux (own Xephyr), `true` elsewhere
+  - Default: `"virtual"` on Linux, `true` elsewhere
   - User-configurable `headless` option overrides the default
 - Enhanced privacy controls:
   - WebRTC blocking
@@ -209,7 +209,7 @@ The `browse` tool supports extensive configuration options:
 ### Browser Configuration
 - `locale`: Browser locale setting (e.g., `en-US`).
 - `viewport`: Custom viewport dimensions object (`{width, height}`).
-- `headless`: Headless mode control (default: auto — on Linux this launches camoufox-mcp's own isolated Xephyr on a random display; `true` forces true headless, `false` renders on the ambient display).
+- `headless`: Headless mode control (default: auto — on Linux, sessions launch their own isolated Xephyr on a random display and one-shot tools use camoufox-js's off-screen Xvfb; `true` forces true headless, `false` renders on the ambient display).
 - `proxy`: Proxy configuration (string or object with auth). Checked against target URL policy.
 - `enable_cache`: Enable browser caching (uses more memory but improves speed when revisiting pages).
 - `firefox_user_prefs`: Custom Firefox preferences object (rejected unless `CAMOUFOX_MCP_ALLOW_UNSAFE_OPTIONS=1`).
@@ -258,6 +258,7 @@ Start and manipulate isolated, short-lived browser sessions. Sessions are epheme
 - `camoufox_status.networkSecurity` reports application-layer best-effort SSRF policy and conservative network sandbox posture. Docker/container detection is not proof of egress filtering.
 - CAPTCHA handling is manual by default. `captchaPolicy: "attempt"` returns challenge metadata, interactive elements, a bounded screenshot, and a suggested strategy. When `CAPTCHA_AUTONOMOUS=true` is set, responses use `challengeHandling: "llm_assisted"` and include provider-specific `challengePlaybook` context when known. The server never solves CAPTCHAs itself or invokes an external skill.
 - **Persistent profiles:** Sessions use `userDataDir` (Playwright persistent context) so cookies, localStorage, and browser fingerprint survive across browser restarts. Each session gets its own profile at `$CAMOUFOX_MCP_PROFILE_DIR/<sessionId>` (default: `~/.camoufox-mcp/profiles/`). One-shot tools (`browse`, `browse_sequence`) still use non-persistent ephemeral browsers.
+- **Env isolation:** camoufox-js keeps a *reference* to `process.env` when no `env` is passed and mutates `env.DISPLAY` for virtual displays. `browser-runtime.ts` therefore always hands it a copy (`withIsolatedEnv`), and `virtdisplay.ts` pins the Xephyr spawn's `DISPLAY` to the host display captured at module load (`HOST_DISPLAY`) — never trusting `process.env` at launch time. Do not remove either guard: without them, a one-shot browser launch poisons `process.env.DISPLAY` and every later session's Xephyr fails with "cannot open host display".
 - Error handling includes detailed error messages for debugging
 - Process lifecycle is managed with proper cleanup on exit
 - Cross-platform support with architecture-specific browser fetching

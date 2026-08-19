@@ -1,5 +1,6 @@
 import type { Browser, BrowserContext, Page, Response } from "playwright-core";
 import type { CaptchaPolicy, DiagnosticsPayload, ScreenshotMetadata } from "./payload-types.js";
+import type { XephyrDisplay } from "./virtdisplay.js";
 
 export type BrowserInstance = Browser;
 export type SupportedOs = "windows" | "macos" | "linux";
@@ -44,6 +45,10 @@ export interface SessionRecord {
   op: Promise<void>;
   closing: boolean;
   closed: boolean;
+  // The session's own Xephyr display (Linux "virtual" mode). Launched at
+  // session start and torn down in closeSessionNow so its lifetime matches the
+  // session exactly, independent of the browser close path.
+  xephyr?: XephyrDisplay;
 }
 
 export interface CamoufoxOptions {
@@ -66,6 +71,10 @@ export interface CamoufoxOptions {
   args?: string[];
   user_data_dir?: string;
   virtual_display?: string;
+  // Explicit environment for the browser process. Set by the session layer to
+  // point DISPLAY at the session's own Xephyr so the browser reliably inherits
+  // it (rather than relying on camoufox-js mutating the shared process.env).
+  env?: Record<string, string>;
 }
 
 export interface BrowserLaunchInput {

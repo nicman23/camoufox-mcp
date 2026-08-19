@@ -9,7 +9,9 @@ export default tseslint.config(
   {
     files: ['**/*.ts'],
     rules: {
-      // Add or override rules as needed
+      // Honor the leading-underscore convention for intentionally-unused
+      // params/vars (e.g. stub signatures kept for API compatibility).
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   }
 );
