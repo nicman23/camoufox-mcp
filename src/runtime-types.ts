@@ -65,6 +65,7 @@ export interface CamoufoxOptions {
   window?: WindowSize;
   args?: string[];
   user_data_dir?: string;
+  virtual_display?: string;
 }
 
 export interface BrowserLaunchInput {

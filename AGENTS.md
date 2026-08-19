@@ -160,9 +160,11 @@ The main MCP server implementation:
 - Uses `camoufox-js` for browser automation
 - Supports OS spoofing (Windows 11, macOS, Linux) with automatic rotation
 - Implements configurable headless modes:
-  - Standard headless for local development
-  - Virtual display (Xvfb) for Linux/Docker environments
-  - User-configurable headless option
+  - Standard headless (`true`) — no display at all
+  - Virtual display (`"virtual"`) — **camoufox-mcp launches its own Xephyr** on a random, verified-free display number (range `:200`–`:299`, see `src/virtdisplay.ts`). This isolates the browser from the ambient `DISPLAY` and from other projects' X servers. The display is torn down when the browser closes. Falls back to camoufox-js's built-in Xvfb when the `Xephyr` binary is unavailable (e.g. minimal containers).
+  - Visible (`false`) — renders on the ambient display, for debugging
+  - Default: `"virtual"` on Linux (own Xephyr), `true` elsewhere
+  - User-configurable `headless` option overrides the default
 - Enhanced privacy controls:
   - WebRTC blocking
   - Image blocking for faster loading
@@ -176,7 +178,7 @@ The main MCP server implementation:
 Multi-stage build process:
 1. Builder stage: Compiles TypeScript and fetches Camoufox browser
 2. Runtime stage: Debian Bookworm slim image with Node.js and required dependencies
-3. Uses Xvfb for headless operation in containers
+3. Uses an isolated virtual display for headless operation in containers (own Xephyr when available, else camoufox-js's Xvfb)
 4. The release workflow publishes `linux/amd64` images
 
 ## Browse Tool Parameters
@@ -207,7 +209,7 @@ The `browse` tool supports extensive configuration options:
 ### Browser Configuration
 - `locale`: Browser locale setting (e.g., `en-US`).
 - `viewport`: Custom viewport dimensions object (`{width, height}`).
-- `headless`: Headless mode control (default: auto, runs virtual display `Xvfb` on Linux/Docker environments).
+- `headless`: Headless mode control (default: auto — on Linux this launches camoufox-mcp's own isolated Xephyr on a random display; `true` forces true headless, `false` renders on the ambient display).
 - `proxy`: Proxy configuration (string or object with auth). Checked against target URL policy.
 - `enable_cache`: Enable browser caching (uses more memory but improves speed when revisiting pages).
 - `firefox_user_prefs`: Custom Firefox preferences object (rejected unless `CAMOUFOX_MCP_ALLOW_UNSAFE_OPTIONS=1`).

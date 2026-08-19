@@ -107,12 +107,10 @@ export function defaultHeadlessMode(headless: boolean | "virtual" | undefined): 
     return headless;
   }
 
-  // In containers (no DISPLAY), use virtual display. On desktops with a
-  // user display, use true headless to avoid window popups.
-  if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
-    return "virtual";
-  }
-  return true;
+  // On Linux, own an isolated Xephyr display (random, verified-free number) so
+  // the browser never attaches to the ambient DISPLAY or another project's X
+  // server. On other platforms, use true headless.
+  return process.platform === "linux" ? "virtual" : true;
 }
 
 export function applyStealthProfile<T extends BrowserLaunchInput>(input: T): T {

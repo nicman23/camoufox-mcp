@@ -7,6 +7,7 @@ import { DEFAULT_WAIT_STRATEGY, GUARD_SETTLE_MS, LAUNCH_TIMEOUT_MS, MAX_CONCURRE
 import { createDiagnosticsCollector } from "./diagnostics.js";
 import { browserContextOptions, buildCamoufoxOptions, validateCommonBrowserInput } from "./browser-options.js";
 import type { BrowserInstance, BrowserOperationContext, CamoufoxOptions, CommonBrowserInput, PendingBrowse, RequestGuard, SlotRelease } from "./types.js";
+import { isXephyrAvailable, launchXephyr, type XephyrDisplay } from "./virtdisplay.js";
 import { applyStealthProfile, defaultHeadlessMode, describeError, getProxySecrets, getProxyServer, redactUrl, selectOperatingSystem, withTimeout } from "./utils.js";
 
 export { browserContextOptions, buildCamoufoxOptions, validateBrowserOptionsInput } from "./browser-options.js";
@@ -15,6 +16,9 @@ let shuttingDown = false;
 let activeBrowses = 0;
 const pendingBrowses: PendingBrowse[] = [];
 const activeBrowsers = new Set<BrowserInstance>();
+// Associates each launched browser with the Xephyr display it renders to, so
+// closeBrowser can tear down the display alongside the browser.
+const browserDisplays = new WeakMap<BrowserInstance, XephyrDisplay>();
 
 export function setBrowserShuttingDown(value: boolean): void { shuttingDown = value; }
 export function activeBrowserCount(): number { return activeBrowsers.size; }
@@ -87,7 +91,24 @@ export function assertBrowserBinaryAvailable(probe: () => unknown = launchPath):
   }
 }
 
+// When the caller asked for a virtual display, launch camoufox-mcp's OWN Xephyr
+// on a random, verified-free display and point the browser at it. This keeps us
+// isolated from the ambient DISPLAY and from other projects' X servers. Returns
+// the display handle for cleanup, or undefined when we defer to camoufox-js's
+// built-in Xvfb (Xephyr unavailable) or no virtual display was requested.
+async function maybeLaunchXephyr(options: CamoufoxOptions): Promise<XephyrDisplay | undefined> {
+  if (options.headless !== "virtual") return undefined;
+  if (!(await isXephyrAvailable())) return undefined;
+  const display = await launchXephyr();
+  // headless:false stops camoufox-js from spawning its own Xvfb; virtual_display
+  // makes it set env.DISPLAY to our Xephyr.
+  options.headless = false;
+  options.virtual_display = display.display;
+  return display;
+}
+
 export async function launchCamoufoxBrowser(options: CamoufoxOptions): Promise<Browser> {
+  const display = await maybeLaunchXephyr(options);
   let timedOut = false;
   const launchPromise = Camoufox<undefined, Browser>(options as LaunchOptions);
   launchPromise.then(
@@ -100,9 +121,12 @@ export async function launchCamoufoxBrowser(options: CamoufoxOptions): Promise<B
   );
 
   try {
-    return await withTimeout(launchPromise, LAUNCH_TIMEOUT_MS, "Browser launch");
+    const browser = await withTimeout(launchPromise, LAUNCH_TIMEOUT_MS, "Browser launch");
+    if (display) browserDisplays.set(browser, display);
+    return browser;
   } catch (error) {
     timedOut = true;
+    if (display) await display.close();
     throw error;
   }
 }
@@ -111,6 +135,7 @@ export async function launchPersistentCamoufox(options: CamoufoxOptions): Promis
   if (!options.user_data_dir) {
     throw new Error("user_data_dir is required for persistent launch");
   }
+  const display = await maybeLaunchXephyr(options);
   let timedOut = false;
   const launchPromise = Camoufox<string, BrowserContext>(options as LaunchOptions & { user_data_dir: string });
   launchPromise.then(
@@ -123,9 +148,13 @@ export async function launchPersistentCamoufox(options: CamoufoxOptions): Promis
   );
 
   try {
-    return await withTimeout(launchPromise, LAUNCH_TIMEOUT_MS, "Persistent browser launch");
+    const context = await withTimeout(launchPromise, LAUNCH_TIMEOUT_MS, "Persistent browser launch");
+    const browser = context.browser();
+    if (display && browser) browserDisplays.set(browser, display);
+    return context;
   } catch (error) {
     timedOut = true;
+    if (display) await display.close();
     throw error;
   }
 }
@@ -330,10 +359,14 @@ export async function runGuardedPageRead<T>(page: Page, requestGuard: RequestGua
 
 export async function closeBrowser(browser: BrowserInstance): Promise<void> {
   activeBrowsers.delete(browser);
+  const display = browserDisplays.get(browser);
+  browserDisplays.delete(browser);
   try {
     await browser.close();
   } catch (closeError) {
     console.error(chalk.yellow(`[Camoufox] Browser close failed: ${describeError(closeError)}`));
+  } finally {
+    if (display) await display.close();
   }
 }
 
